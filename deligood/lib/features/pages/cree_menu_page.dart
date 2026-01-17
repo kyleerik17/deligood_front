@@ -1,49 +1,16 @@
 import 'dart:typed_data';
-import 'package:deligood/features/client/screens/Home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:deligood/features/client/screens/Home_screen.dart';
 
-// ===========================================
-// GÉRER LE TOKEN ET USER_TYPE
-// ===========================================
-Future<void> saveUserData(
-  String token,
-  String userType,
-  int restaurantId,
-) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('access_token', token);
-  await prefs.setString('user_type', userType);
-  await prefs.setInt('restaurant_id', restaurantId);
-  print(
-    'Token, user_type et restaurant_id sauvegardés: $token, $userType, $restaurantId',
-  );
-}
-
-Future<Map<String, dynamic>> getUserData() async {
-  final prefs = await SharedPreferences.getInstance();
-  final token = prefs.getString('access_token');
-  final userType = prefs.getString('user_type');
-  final restaurantId = prefs.getInt('restaurant_id');
-  print('Token récupéré: $token');
-  print('User type récupéré: $userType');
-  print('Restaurant ID récupéré: $restaurantId');
-  return {
-    'access_token': token,
-    'user_type': userType,
-    'restaurant_id': restaurantId,
-  };
-}
-
-// ===========================================
-// CREATE MENU PAGE
-// ===========================================
 class CreateMenuPage extends StatefulWidget {
   final String userRole;
-  final int orderId; // Id de la commande
+  final int orderId;
+
   const CreateMenuPage({
     super.key,
     required this.userRole,
@@ -59,7 +26,6 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
   final nameCtrl = TextEditingController();
   final descCtrl = TextEditingController();
   final priceCtrl = TextEditingController();
-
   int? categoryId;
   Uint8List? imageBytes;
   bool loading = false;
@@ -72,60 +38,97 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
     {'id': 3, 'name': 'Dessert'},
   ];
 
-  // ===========================================
-  // PICK IMAGE
-  // ===========================================
+  @override
+  void initState() {
+    super.initState();
+    print("=== CreateMenuPage ouverte ===");
+  }
+
   Future<void> pickImage() async {
+    print("==> Ouvrir la galerie pour choisir une image");
     final img = await picker.pickImage(source: ImageSource.gallery);
     if (img != null) {
       final bytes = await img.readAsBytes();
       setState(() => imageBytes = bytes);
-      print('Image choisie, taille: ${bytes.lengthInBytes} octets');
+      print(
+        "Image choisie: ${img.name}, taille: ${bytes.lengthInBytes} octets",
+      );
     } else {
-      print('Aucune image choisie');
+      print("Aucune image choisie");
     }
   }
 
-  // ===========================================
-  // SUBMIT MENU
-  // ===========================================
+  Future<Map<String, dynamic>> getUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token');
+    final userType = prefs.getString('user_type');
+    final restaurantId = prefs.getInt('restaurant_id');
+
+    print(
+      "🔍 getUserData -> token: $token, userType: $userType, restaurantId: $restaurantId",
+    );
+
+    if (token == null) {
+      print("❌ Token non trouvé dans SharedPreferences !");
+    }
+    if (userType == null) {
+      print("❌ userType non trouvé dans SharedPreferences !");
+    }
+    if (restaurantId == null) {
+      print("❌ restaurantId non trouvé dans SharedPreferences !");
+    }
+
+    return {
+      'access_token': token,
+      'user_type': userType,
+      'restaurant_id': restaurantId,
+    };
+  }
+
   Future<void> submit() async {
-    print('--- SUBMIT CLICK ---');
+    print("==> Submit cliqué");
+
     if (!_formKey.currentState!.validate() || categoryId == null) {
-      print('Formulaire invalide ou catégorie non choisie');
+      print("❌ Formulaire invalide ou catégorie non choisie");
       return;
     }
 
     setState(() => loading = true);
+    print("Formulaire valide, envoi en cours...");
 
-    // Récupération du token, user_type et restaurant_id
     final userData = await getUserData();
     final token = userData['access_token'];
-    final userType = userData['user_type'];
     final restaurantId = userData['restaurant_id'];
+    final userType = userData['user_type'];
 
-    if (token == null || restaurantId == null) {
-      print('Erreur: token ou restaurant_id null');
+    if (token == null) {
+      print("❌ Impossible d'envoyer: token null");
       setState(() => loading = false);
       return;
     }
-
+    if (restaurantId == null) {
+      print(
+        "❌ Impossible d'envoyer: restaurantId null - il faut d'abord sauvegarder restaurantId !",
+      );
+      setState(() => loading = false);
+      return;
+    }
     if (userType != 'restaurant') {
-      print('Erreur: utilisateur non autorisé');
+      print("❌ Utilisateur non autorisé: userType=$userType");
       setState(() => loading = false);
       return;
     }
 
-    final uri = Uri.parse('http://deligood-production.up.railway.app/create/');
+    final uri = Uri.parse(
+      'https://deligood-backend.onrender.com//api/menu/create/',
+    );
     final request = http.MultipartRequest('POST', uri);
     request.headers['Authorization'] = 'Token $token';
-
     request.fields['name'] = nameCtrl.text;
     request.fields['description'] = descCtrl.text;
-    request.fields['price'] =
-        priceCtrl.text; // string pour correspondre au backend
+    request.fields['price'] = priceCtrl.text;
     request.fields['category'] = categoryId.toString();
-    request.fields['restaurant'] = restaurantId.toString(); // dynamique
+    request.fields['restaurant'] = restaurantId.toString();
 
     if (imageBytes != null) {
       request.files.add(
@@ -135,175 +138,212 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
           filename: 'plat.png',
         ),
       );
-      print('Image ajoutée au formulaire');
+      print("📷 Image ajoutée: ${imageBytes!.lengthInBytes} octets");
     }
 
     try {
+      print("📡 Envoi de la requête au backend...");
       final response = await request.send();
+      final respStr = await response.stream.bytesToString();
       setState(() => loading = false);
 
-      final respStr = await response.stream.bytesToString();
-      print('Status code: ${response.statusCode}');
-      print('Réponse serveur: $respStr');
+      print("Status code: ${response.statusCode}");
+      print("Réponse serveur: $respStr");
 
       if (response.statusCode == 201) {
+        print("✅ Plat créé avec succès !");
+        if (!mounted) return;
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Plat créé avec succès')));
-
-        if (!mounted) return;
         Navigator.pushReplacement(
           context,
-          PageRouteBuilder(
-            pageBuilder: (_, __, ___) => HomeScreen(orderId: widget.orderId),
-            transitionsBuilder: (_, animation, __, child) {
-              final tween = Tween(
-                begin: const Offset(1, 0),
-                end: Offset.zero,
-              ).chain(CurveTween(curve: Curves.easeInOut));
-              return SlideTransition(
-                position: animation.drive(tween),
-                child: child,
-              );
-            },
+          MaterialPageRoute(
+            builder: (_) => HomeScreen(orderId: widget.orderId),
           ),
         );
       } else {
+        print("❌ Erreur serveur: $respStr");
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Erreur: $respStr')));
       }
     } catch (e) {
-      print('Exception: $e');
       setState(() => loading = false);
+      print("❌ Exception lors de l'envoi: $e");
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Erreur réseau')));
     }
   }
 
-  // ===========================================
-  // BUILD
-  // ===========================================
   @override
   Widget build(BuildContext context) {
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: Colors.orange[50],
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Colors.deepOrange, width: 2),
+      ),
+    );
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('Créer un plat'),
+        title: Text(
+          'Créer un plat',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 20),
+        ),
         backgroundColor: Colors.deepOrange,
+        elevation: 4,
       ),
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: const [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 8,
-                  offset: Offset(0, 4),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 12,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: nameCtrl,
+                  style: GoogleFonts.poppins(),
+                  decoration: inputDecoration.copyWith(
+                    labelText: 'Nom',
+                    prefixIcon: const Icon(
+                      Icons.fastfood,
+                      color: Colors.deepOrange,
+                    ),
+                  ),
+                  validator: (v) => v!.isEmpty ? 'Champ requis' : null,
+                  onChanged: (val) => print("Nom modifié: $val"),
                 ),
-              ],
-            ),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: nameCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Nom',
-                      prefixIcon: Icon(Icons.fastfood),
-                      filled: true,
-                      fillColor: Color(0xFFFFF3E0),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  style: GoogleFonts.poppins(),
+                  decoration: inputDecoration.copyWith(
+                    labelText: 'Description',
+                    prefixIcon: const Icon(
+                      Icons.description,
+                      color: Colors.deepOrange,
                     ),
-                    validator: (v) => v!.isEmpty ? 'Champ requis' : null,
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: descCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Description',
-                      prefixIcon: Icon(Icons.description),
-                      filled: true,
-                      fillColor: Color(0xFFFFF3E0),
+                  onChanged: (val) => print("Description modifiée: $val"),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: priceCtrl,
+                  keyboardType: TextInputType.number,
+                  style: GoogleFonts.poppins(),
+                  decoration: inputDecoration.copyWith(
+                    labelText: 'Prix',
+                    prefixIcon: const Icon(
+                      Icons.price_check,
+                      color: Colors.deepOrange,
                     ),
-                    maxLines: 3,
                   ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: priceCtrl,
-                    decoration: const InputDecoration(
-                      labelText: 'Prix',
-                      prefixIcon: Icon(Icons.price_check),
-                      filled: true,
-                      fillColor: Color(0xFFFFF3E0),
+                  validator: (v) => v!.isEmpty ? 'Champ requis' : null,
+                  onChanged: (val) => print("Prix modifié: $val"),
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<int>(
+                  value: categoryId,
+                  items: categories
+                      .map(
+                        (c) => DropdownMenuItem<int>(
+                          value: c['id'] as int,
+                          child: Text(
+                            c['name'] as String,
+                            style: GoogleFonts.poppins(),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  decoration: inputDecoration.copyWith(labelText: 'Catégorie'),
+                  onChanged: (v) {
+                    setState(() => categoryId = v);
+                    print("Catégorie sélectionnée: $v");
+                  },
+                  validator: (v) => v == null ? 'Choisir une catégorie' : null,
+                ),
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: pickImage,
+                  child: Container(
+                    height: 160,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.deepOrange),
+                      color: Colors.orange[50],
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 6,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
                     ),
-                    keyboardType: TextInputType.number,
-                    validator: (v) => v!.isEmpty ? 'Champ requis' : null,
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    hint: const Text('Catégorie'),
-                    initialValue: categoryId,
-                    items: categories.map((c) {
-                      final id = c['id'] as int;
-                      final name = c['name'] as String;
-                      return DropdownMenuItem<int>(
-                        value: id,
-                        child: Text(name),
-                      );
-                    }).toList(),
-                    onChanged: (v) {
-                      setState(() => categoryId = v);
-                      print('Catégorie sélectionnée: $v');
-                    },
-                    validator: (v) =>
-                        v == null ? 'Choisir une catégorie' : null,
-                  ),
-                  const SizedBox(height: 16),
-                  GestureDetector(
-                    onTap: pickImage,
-                    child: Container(
-                      height: 150,
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.deepOrange),
-                        borderRadius: BorderRadius.circular(12),
-                        color: Colors.orange[50],
-                      ),
-                      child: imageBytes == null
-                          ? const Center(child: Text('Choisir une image'))
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.memory(
-                                imageBytes!,
-                                fit: BoxFit.cover,
+                    child: imageBytes == null
+                        ? Center(
+                            child: Text(
+                              'Choisir une image',
+                              style: GoogleFonts.poppins(
+                                color: Colors.deepOrange,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
-                    ),
+                          )
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.memory(imageBytes!, fit: BoxFit.cover),
+                          ),
                   ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
                     onPressed: loading ? null : submit,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.deepOrange,
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 16,
-                        horizontal: 48,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
                       ),
+                      shadowColor: Colors.deepOrangeAccent,
+                      elevation: 6,
                     ),
                     child: loading
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : const Text('Créer', style: TextStyle(fontSize: 16)),
+                        : Text(
+                            'Créer',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),

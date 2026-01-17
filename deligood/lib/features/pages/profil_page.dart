@@ -1,13 +1,16 @@
-import 'package:deligood/features/auth/widgets/logout.dart';
-import 'package:deligood/features/pages/info_perso.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:deligood/features/pages/wallet_page.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
-import 'package:gap/gap.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:gap/gap.dart';
+import 'package:deligood/features/auth/widgets/logout.dart';
+import 'package:deligood/features/pages/info_perso.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key,});
-  
+  const ProfilePage({super.key});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -18,6 +21,8 @@ class _ProfilePageState extends State<ProfilePage> {
   String lastName = '';
   String phoneNumber = '';
   String initials = '?';
+  String userType = '';
+  Uint8List? avatarBytes;
 
   @override
   void initState() {
@@ -26,36 +31,31 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _loadUserFromPrefs() async {
-    print('🧠 Chargement des infos utilisateur depuis SharedPreferences...');
     final prefs = await SharedPreferences.getInstance();
-
     final fName = prefs.getString('first_name');
     final lName = prefs.getString('last_name');
     final phone = prefs.getString('phone_number');
-
-    print('📌 first_name: $fName');
-    print('📌 last_name: $lName');
-    print('📌 phone_number: $phone');
+    final type = prefs.getString('user_type') ?? '';
+    final avatarBase64 = prefs.getString('avatar_base64');
 
     setState(() {
       firstName = fName ?? '';
       lastName = lName ?? '';
       phoneNumber = phone ?? '';
+      userType = type;
       initials = _buildInitials(firstName, lastName);
+      if (avatarBase64 != null) avatarBytes = base64Decode(avatarBase64);
     });
-
-    print(
-      '✅ State mis à jour: $firstName, $lastName, $phoneNumber, initials: $initials',
-    );
   }
 
   String _buildInitials(String fName, String lName) {
-    if (fName.isNotEmpty && lName.isNotEmpty) {
+    if (fName.isNotEmpty && lName.isNotEmpty)
       return '${fName[0]}${lName[0]}'.toUpperCase();
-    }
     if (fName.isNotEmpty) return fName[0].toUpperCase();
     return '?';
   }
+
+  bool get showWallet => userType != 'client';
 
   @override
   Widget build(BuildContext context) {
@@ -63,160 +63,253 @@ class _ProfilePageState extends State<ProfilePage> {
         '${firstName.isEmpty ? '' : firstName} ${lastName.isEmpty ? '' : lastName}'
             .trim();
 
-    print(
-      '🖥 Construction UI avec: fullName="$fullName", phone="$phoneNumber"',
-    );
-
     return Scaffold(
+      backgroundColor: Colors.grey.shade100,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  Container(height: 9.h, color: const Color(0xFFEA7C17)),
-                  Text(
+        child: Column(
+          children: [
+            // ================= HEADER =================
+            Stack(
+              children: [
+                ClipPath(
+                  clipper: HeaderClipper(),
+                  child: Container(
+                    height: 22.h,
+                    color: Colors.deepPurple.shade600,
+                  ),
+                ),
+                Positioned(
+                  left: 5.w,
+                  top: 5.h,
+                  child: Text(
                     "Profil",
                     style: TextStyle(
                       color: Colors.white,
-                      fontWeight: FontWeight.w500,
-                      fontSize: 19.sp,
-                      fontFamily: "Poppins",
-                      letterSpacing: 0.9,
+                      fontSize: 22.sp,
+                      fontWeight: FontWeight.bold,
+                      fontFamily: 'Poppins',
+                      letterSpacing: 1.1,
                     ),
                   ),
-                  Positioned(
-                    right: 4.w,
-                    bottom: 1.h,
-                    child: GestureDetector(
-                      onTap: () => Navigator.pop(context),
-                      child: Container(
-                        
-                        padding: EdgeInsets.all(0.w),
-                        child: Icon(
-                          Icons.forward,
-                          size: 12.w,
-                          color: Colors.black,
-                        ),
-                      ),
+                ),
+              ],
+            ),
+
+            // ================= AVATAR =================
+            Transform.translate(
+              offset: Offset(0, -6.h),
+              child: Column(
+                children: [
+                  Material(
+                    elevation: 8,
+                    shape: const CircleBorder(),
+                    child: CircleAvatar(
+                      radius: 12.w,
+                      backgroundColor: Colors.white,
+                      backgroundImage: avatarBytes != null
+                          ? MemoryImage(avatarBytes!)
+                          : null,
+                      child: avatarBytes == null
+                          ? Text(
+                              initials,
+                              style: TextStyle(
+                                fontSize: 20.sp,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepPurple,
+                              ),
+                            )
+                          : null,
+                    ),
+                  ),
+                  Gap(1.h),
+                  Text(
+                    fullName.isEmpty ? 'Utilisateur' : fullName,
+                    style: TextStyle(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'Roboto',
+                    ),
+                  ),
+                  Gap(0.5.h),
+                  Text(
+                    phoneNumber.isEmpty ? '—' : phoneNumber,
+                    style: TextStyle(
+                      fontSize: 15.sp,
+                      fontWeight: FontWeight.w400,
+                      color: Colors.grey.shade700,
+                      fontFamily: 'Roboto',
                     ),
                   ),
                 ],
               ),
-              Gap(6.h),
-              CircleAvatar(
-                radius: 10.w,
-                backgroundColor: Colors.black,
-                child: Text(
-                  initials,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 18.sp,
-                  ),
-                ),
-              ),
-              Gap(1.h),
-              Text(
-                fullName.isEmpty ? 'Utilisateur' : fullName,
-                style: TextStyle(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.w400,
-                  color: const Color(0xFF1A1A1A),
-                ),
-              ),
-              Gap(0.5.h),
-              Text(
-                phoneNumber.isEmpty ? '—' : phoneNumber,
-                style: TextStyle(
-                  fontSize: 18.sp,
-                  fontWeight: FontWeight.w400,
-                  color: const Color(0xFF7F7F7F),
-                ),
-              ),
-              Gap(6.h),
-              Padding(
+            ),
+
+            // ================= OPTIONS =================
+            Expanded(
+              child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 4.w),
-                child: Column(
+                child: ListView(
                   children: [
-                    Divider(color: Colors.grey.shade300, thickness: 2),
                     Gap(2.h),
-                    OptionRow(
+                    OptionCard(
+                      icon: Icons.person,
                       title: "Modifier profil",
                       onTap: () {
                         Navigator.push(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                InfoPersoPage(), // Assure-toi que ta page InfoPerso existe
-                          ),
-                        );
+                          MaterialPageRoute(builder: (_) => InfoPersoPage()),
+                        ).then((_) => _loadUserFromPrefs());
                       },
                     ),
 
-                    Divider(color: Colors.grey.shade300, thickness: 2),
-                    Gap(2.h),
-                    OptionRow(title: "Recettes", onTap: () {}),
-                    Divider(color: Colors.grey.shade300, thickness: 2),
-                    Gap(2.h),
-                    OptionRow(title: "Conditions d'utilisation", onTap: () {}),
-                    Divider(color: Colors.grey.shade300, thickness: 2),
-                    Gap(2.h),
-                    OptionRow(
+                    // 🔹 Carte Solde seulement pour livreur/resto
+                    if (showWallet)
+                      OptionCard(
+                        icon: Icons.receipt_long,
+                        title: "Solde",
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const WalletPage(),
+                            ),
+                          );
+                        },
+                      ),
+
+                    OptionCard(
+                      icon: Icons.policy,
+                      title: "Conditions d'utilisation",
+                      onTap: () {},
+                    ),
+                    OptionCard(
+                      icon: Icons.privacy_tip,
                       title: "Politique de confidentialité",
                       onTap: () {},
                     ),
-                    Divider(color: Colors.grey.shade300, thickness: 2),
-                    Gap(2.h),
-                    OptionRow(title: "Nous contacter", onTap: () {}),
-                    Divider(color: Colors.grey.shade300, thickness: 2),
-                    Gap(2.h),
-               OptionRow(
-  title: "Déconnexion",
-  onTap: () async {
-    final prefs = await SharedPreferences.getInstance();
-    final orderId = prefs.getInt('last_order_id'); // si tu veux garder la dernière commande
-    await LogoutService.performLogout(context, orderId: orderId);
-  },
-),
-
-
-                    Divider(color: Colors.grey.shade300, thickness: 2),
-                    Gap(2.h),
+                    OptionCard(
+                      icon: Icons.support_agent,
+                      title: "Nous contacter",
+                      onTap: () {},
+                    ),
+                    OptionCard(
+                      icon: Icons.logout,
+                      title: "Déconnexion",
+                      onTap: () async {
+                        final prefs = await SharedPreferences.getInstance();
+                        final orderId = prefs.getInt('last_order_id');
+                        await LogoutService.performLogout(
+                          context,
+                          orderId: orderId,
+                        );
+                      },
+                      color: Colors.red.shade600,
+                      iconColor: Colors.white,
+                    ),
+                    Gap(4.h),
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class OptionRow extends StatelessWidget {
+// ================= OPTION CARD =================
+class OptionCard extends StatefulWidget {
   final String title;
+  final IconData icon;
   final VoidCallback? onTap;
+  final Color? color;
+  final Color? iconColor;
 
-  const OptionRow({super.key, required this.title, this.onTap});
+  const OptionCard({
+    super.key,
+    required this.title,
+    required this.icon,
+    this.onTap,
+    this.color,
+    this.iconColor,
+  });
+
+  @override
+  State<OptionCard> createState() => _OptionCardState();
+}
+
+class _OptionCardState extends State<OptionCard> {
+  bool _isPressed = false;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: 1.5.h),
-        child: Text(
-          title,
-          style: TextStyle(
-            fontSize: 17.sp,
-            fontWeight: FontWeight.w400,
-            color: Colors.black,
-          ),
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      onTap: widget.onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        margin: EdgeInsets.symmetric(vertical: 0.8.h),
+        padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
+        decoration: BoxDecoration(
+          color: widget.color ?? Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: _isPressed
+              ? []
+              : [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 6,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+        ),
+        child: Row(
+          children: [
+            Icon(widget.icon, color: widget.iconColor ?? Colors.deepPurple),
+            SizedBox(width: 4.w),
+            Expanded(
+              child: Text(
+                widget.title,
+                style: TextStyle(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'Roboto',
+                  color: widget.color != null ? Colors.white : Colors.black87,
+                ),
+              ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios,
+              size: 18,
+              color: widget.color != null ? Colors.white : Colors.grey,
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+// ================= HEADER CLIPPER =================
+class HeaderClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(0, size.height - 40);
+    path.quadraticBezierTo(
+      size.width / 2,
+      size.height + 20,
+      size.width,
+      size.height - 40,
+    );
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

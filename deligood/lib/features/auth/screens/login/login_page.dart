@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'package:deligood/features/auth/screens/login/forget_password.dart';
+import 'package:deligood/features/auth/screens/register/register_page.dart'
+    hide ForgetPasswordPage;
 import 'package:deligood/features/client/screens/Home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,11 +12,7 @@ class LoginPage extends StatefulWidget {
   final int? orderId; // Nullable
   final void Function(String type) onLoginSuccess;
 
-  const LoginPage({
-    super.key,
-    required this.onLoginSuccess,
-    this.orderId, // Nullable// ✅ requis
-  });
+  const LoginPage({super.key, required this.onLoginSuccess, this.orderId});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -47,7 +46,9 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => isLoading = true);
 
-    final url = Uri.parse('http://127.0.0.1:8000/api/users/login/');
+    final url = Uri.parse(
+      'https://deligood-backend.onrender.com//api/users/login/',
+    );
     final phone = phoneController.text.trim();
     final pin = pinController.text.trim();
 
@@ -65,11 +66,11 @@ class _LoginPageState extends State<LoginPage> {
 
         if (!mounted) return;
 
-        widget.onLoginSuccess(data['user']['user_type']);
+        widget.onLoginSuccess(data['user']['user_type'] ?? '');
 
         Navigator.pushReplacement(
           context,
-          _createRoute(data['user']['user_type']),
+          _createRoute(data['user']['user_type'] ?? ''),
         );
       } else {
         _showError(data['message'] ?? 'Erreur de connexion');
@@ -95,6 +96,7 @@ class _LoginPageState extends State<LoginPage> {
     await prefs.setString('first_name', user['first_name'] ?? '');
     await prefs.setString('last_name', user['last_name'] ?? '');
     await prefs.setString('phone_number', user['phone_number'] ?? '');
+    await prefs.setString('locality', user['locality'] ?? '');
   }
 
   void _showError(String message) {
@@ -105,8 +107,7 @@ class _LoginPageState extends State<LoginPage> {
 
   Route _createRoute(String userType) {
     return PageRouteBuilder(
-      pageBuilder: (_, __, ___) =>
-          HomeScreen(orderId: widget.orderId ?? 0), // ✅ passe orderId
+      pageBuilder: (_, __, ___) => HomeScreen(orderId: widget.orderId ?? 0),
       transitionsBuilder: (_, animation, __, child) {
         final tween = Tween(
           begin: const Offset(1, 0),
@@ -120,54 +121,152 @@ class _LoginPageState extends State<LoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: Padding(
-          padding: EdgeInsets.all(16.0),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'Connexion',
-                  style: TextStyle(
-                    fontSize: 22.sp,
-                    fontWeight: FontWeight.bold,
-                  ),
+          padding: EdgeInsets.symmetric(horizontal: 6.w),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // ---------------- LOGO ----------------
+              Icon(
+                Icons.delivery_dining,
+                size: 20.w,
+                color: Colors.deepOrangeAccent,
+              ),
+              SizedBox(height: 2.h),
+              Text(
+                'DeliGood',
+                style: TextStyle(
+                  fontSize: 28.sp,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.deepOrangeAccent,
                 ),
-                TextFormField(
-                  controller: phoneController,
-                  decoration: const InputDecoration(labelText: 'Téléphone'),
-                  validator: (v) =>
-                      v == null || v.isEmpty ? 'Numéro requis' : null,
+              ),
+              SizedBox(height: 4.h),
+
+              // ---------------- FORM ----------------
+              Form(
+                key: _formKey,
+                child: Column(
+                  children: [
+                    _buildTextField(phoneController, 'Téléphone', false),
+                    SizedBox(height: 2.h),
+                    _buildTextField(pinController, 'PIN', true),
+                  ],
                 ),
-                TextFormField(
-                  controller: pinController,
-                  obscureText: obscurePin,
-                  maxLength: 4,
-                  decoration: InputDecoration(
-                    labelText: 'PIN',
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        obscurePin ? Icons.visibility : Icons.visibility_off,
-                      ),
-                      onPressed: () => setState(() => obscurePin = !obscurePin),
+              ),
+              SizedBox(height: 3.h),
+
+              // ---------------- LOGIN BUTTON ----------------
+              SizedBox(
+                width: double.infinity,
+                height: 6.h,
+                child: ElevatedButton(
+                  onPressed: isLoading ? null : _login,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepOrangeAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  validator: (v) =>
-                      v != null && v.length == 4 ? null : 'PIN invalide',
-                ),
-                ElevatedButton(
-                  onPressed: isLoading ? null : _login,
                   child: isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : const Text('Se connecter'),
+                      : Text(
+                          'Se connecter',
+                          style: TextStyle(
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
-              ],
-            ),
+              ),
+              SizedBox(height: 2.h),
+
+              // ---------------- FORGOT / REGISTER ----------------
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ForgetPasswordPage(),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      'Mot de passe oublié ?',
+                      style: TextStyle(
+                        fontSize: 17.sp,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const RegisterPage()),
+                      );
+                    },
+                    child: Text(
+                      'S\'inscrire',
+                      style: TextStyle(
+                        fontSize: 17.sp,
+                        color: Colors.deepOrangeAccent,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTextField(
+    TextEditingController controller,
+    String label,
+    bool obscure,
+  ) {
+    return TextFormField(
+      controller: controller,
+      obscureText: obscure && controller == pinController,
+      maxLength: obscure ? 4 : null,
+      decoration: InputDecoration(
+        labelText: label,
+        counterText: '',
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Colors.black12),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: Colors.deepOrangeAccent,
+            width: 2,
+          ),
+        ),
+        suffixIcon: obscure
+            ? IconButton(
+                icon: Icon(
+                  obscurePin ? Icons.visibility : Icons.visibility_off,
+                  color: Colors.grey[600],
+                ),
+                onPressed: () => setState(() => obscurePin = !obscurePin),
+              )
+            : null,
+        contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
+      ),
+      validator: (v) {
+        if (v == null || v.isEmpty) return '$label requis';
+        if (obscure && v.length != 4) return 'PIN invalide';
+        return null;
+      },
     );
   }
 }

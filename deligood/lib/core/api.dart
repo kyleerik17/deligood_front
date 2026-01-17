@@ -2,7 +2,7 @@ class ApiConfig {
   // ==========================
   // BASE URL (LOCAL - CHROME)
   // ==========================
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String baseUrl = 'https://deligood-backend.onrender.com/';
 
   // ==========================
   // AUTH
@@ -14,8 +14,7 @@ class ApiConfig {
   // MENU
   // ==========================
   static const String menuItems = '$baseUrl/api/menu/';
-  static String menuItemDetail(int id) =>
-      '$baseUrl/api/menu/$id/';
+  static String menuItemDetail(int id) => '$baseUrl/api/menu/$id/';
 
   // ==========================
   // PANIER
@@ -23,8 +22,7 @@ class ApiConfig {
   static const String cart = '$baseUrl/api/cart/';
   static const String addToCart = '$baseUrl/api/cart/add/';
   static const String updateCart = '$baseUrl/api/cart/update/';
-  static String removeFromCart(int id) =>
-      '$baseUrl/api/cart/remove/$id/';
+  static String removeFromCart(int id) => '$baseUrl/api/cart/remove/$id/';
 
   // ==========================
   // COMMANDES (ORDERS)
@@ -32,14 +30,11 @@ class ApiConfig {
   static const String orders = '$baseUrl/api/orders/';
   static const String createOrder = '$baseUrl/api/orders/create/';
   static const String clientOrders = '$baseUrl/api/orders/client/';
-  static String orderDetail(int id) =>
-      '$baseUrl/api/orders/$id/';
-  static String updateOrderStatus(int id) =>
-      '$baseUrl/api/orders/$id/status/';
+  static String orderDetail(int id) => '$baseUrl/api/orders/$id/';
+  static String updateOrderStatus(int id) => '$baseUrl/api/orders/$id/status/';
 
   // ==========================
   // LIVRAISON
   // ==========================
-  static const String deliveredOrders =
-      '$baseUrl/api/orders/delivered/';
+  static const String deliveredOrders = '$baseUrl/api/orders/delivered/';
 }

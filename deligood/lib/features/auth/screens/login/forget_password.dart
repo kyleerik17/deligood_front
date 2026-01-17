@@ -21,7 +21,6 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
 
   bool isLoading = false;
 
-  // ================= API VERIFICATION IDENTITÉ =================
   Future<void> _verifyIdentity() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -46,12 +45,10 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200 && data['reset_allowed'] == true) {
-        // SnackBar facultatif
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Identité confirmée')));
 
-        // 🔹 NAVIGATION VERS CONFIRM_PASSWORD
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => ConfirmPasswordPage(phoneNumber: phone),
@@ -69,7 +66,7 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
+      SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
     );
   }
 
@@ -78,13 +75,24 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
     required IconData icon,
   }) {
     return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon),
+      labelText: label.toUpperCase(),
+      labelStyle: TextStyle(
+        fontFamily: 'Poppins',
+        fontWeight: FontWeight.w600,
+        color: Colors.deepPurple.shade700,
+        letterSpacing: 0.5,
+      ),
+      prefixIcon: Icon(icon, color: Colors.deepPurple.shade400),
       filled: true,
-      fillColor: Colors.grey.shade100,
+      fillColor: Colors.white,
+      contentPadding: EdgeInsets.symmetric(vertical: 1.5.h, horizontal: 4.w),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(20),
-        borderSide: BorderSide.none,
+        borderSide: BorderSide(color: Colors.deepPurple.shade700, width: 1.5),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(20),
+        borderSide: BorderSide(color: Colors.deepPurple.shade900, width: 2),
       ),
     );
   }
@@ -92,111 +100,137 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Mot de passe oublié')),
-      body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 6.w),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(height: 5.h),
-                    Text(
-                      'Vérifiez votre identité',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 18.sp,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    SizedBox(height: 4.h),
+      // ================== BACKGROUND GRIFURES ==================
+      body: Stack(
+        children: [
+          // Fond principal
+          Container(color: const Color.fromARGB(255, 246, 241, 231)),
 
-                    // ===== NUMÉRO =====
-                    TextFormField(
-                      controller: phoneController,
-                      keyboardType: TextInputType.phone,
-                      decoration: _inputDecoration(
-                        label: 'Numéro de téléphone',
-                        icon: Icons.phone,
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Le numéro est obligatoire';
-                        }
-                        if (value.length < 8) return 'Numéro invalide';
-                        return null;
-                      },
-                    ),
-                    SizedBox(height: 2.h),
-
-                    // ===== PRÉNOM =====
-                    TextFormField(
-                      controller: firstNameController,
-                      decoration: _inputDecoration(
-                        label: 'Prénom',
-                        icon: Icons.person,
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Le prénom est obligatoire';
-                        }
-                        return null;
-                      },
-                    ),
-                    SizedBox(height: 2.h),
-
-                    // ===== NOM =====
-                    TextFormField(
-                      controller: lastNameController,
-                      decoration: _inputDecoration(
-                        label: 'Nom',
-                        icon: Icons.person_outline,
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Le nom est obligatoire';
-                        }
-                        return null;
-                      },
-                    ),
-                    SizedBox(height: 4.h),
-
-                    // ===== BOUTON VALIDER =====
-                    SizedBox(
-                      width: double.infinity,
-                      height: 6.h,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(25),
-                          ),
+          // ================== CONTENU ==================
+          SafeArea(
+            child: Column(
+              children: [
+                // Bouton retour
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Icon(
+                          Icons.arrow_back,
+                          color: Colors.deepPurple.shade700,
+                          size: 4.h,
                         ),
-                        onPressed: isLoading ? null : _verifyIdentity,
-                        child: isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white,
-                              )
-                            : Text(
-                                'Valider',
-                                style: TextStyle(
-                                  fontSize: 12.sp,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                Expanded(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.symmetric(horizontal: 6.w),
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            SizedBox(height: 2.h),
+                            Text(
+                              'VÉRIFICATION D\'IDENTITÉ',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 22.sp,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.deepPurple.shade800,
+                                letterSpacing: 1.5,
+                                fontFamily: 'Poppins',
                               ),
+                            ),
+                            SizedBox(height: 4.h),
+
+                            TextFormField(
+                              controller: phoneController,
+                              keyboardType: TextInputType.phone,
+                              decoration: _inputDecoration(
+                                label: 'Numéro de téléphone',
+                                icon: Icons.phone,
+                              ).copyWith(hintText: '2250565838385'),
+                              validator: (value) {
+                                if (value == null || value.isEmpty)
+                                  return 'Le numéro est obligatoire';
+                                if (value.length < 8) return 'Numéro invalide';
+                                return null;
+                              },
+                            ),
+                            SizedBox(height: 1.5.h),
+
+                            TextFormField(
+                              controller: firstNameController,
+                              decoration: _inputDecoration(
+                                label: 'Prénom',
+                                icon: Icons.person,
+                              ),
+                              validator: (value) =>
+                                  value == null || value.isEmpty
+                                  ? 'Le prénom est obligatoire'
+                                  : null,
+                            ),
+                            SizedBox(height: 1.5.h),
+
+                            TextFormField(
+                              controller: lastNameController,
+                              decoration: _inputDecoration(
+                                label: 'Nom',
+                                icon: Icons.person_outline,
+                              ),
+                              validator: (value) =>
+                                  value == null || value.isEmpty
+                                  ? 'Le nom est obligatoire'
+                                  : null,
+                            ),
+                            SizedBox(height: 3.h),
+
+                            SizedBox(
+                              height: 6.h,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.deepPurple.shade700,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(25),
+                                  ),
+                                  shadowColor: Colors.deepPurpleAccent,
+                                  elevation: 5,
+                                ),
+                                onPressed: isLoading ? null : _verifyIdentity,
+                                child: isLoading
+                                    ? const CircularProgressIndicator(
+                                        color: Colors.white,
+                                      )
+                                    : Text(
+                                        'VALIDER',
+                                        style: TextStyle(
+                                          fontSize: 14.sp,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                          letterSpacing: 1.5,
+                                          fontFamily: 'Poppins',
+                                        ),
+                                      ),
+                              ),
+                            ),
+                            SizedBox(height: 5.h),
+                          ],
+                        ),
                       ),
                     ),
-                    SizedBox(height: 5.h),
-                  ],
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }

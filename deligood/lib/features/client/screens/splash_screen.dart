@@ -1,16 +1,14 @@
-import 'package:deligood/features/client/screens/onboarding_screen.dart';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:deligood/features/client/screens/onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
-  final int orderId; // Id de la commande à suivre
-  const SplashScreen({
-    super.key, required this.orderId,
-   
-  });
+  final int orderId;
+  const SplashScreen({super.key, required this.orderId});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -18,76 +16,54 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
-  bool _showFirstImage = false;
-  bool _showSecondImage = false;
-  bool _isBlackBackground = false;
+  late AnimationController _logoController;
+  late AnimationController _particleController;
   bool _showText = false;
 
-  
+  final int particleCount = 50;
+  final Random random = Random();
+
+  late List<Offset> particlePositions;
+  late List<double> particleSizes;
 
   @override
   void initState() {
     super.initState();
+    _logoController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 3))
+          ..repeat(reverse: true);
+
+    _particleController =
+        AnimationController(vsync: this, duration: const Duration(seconds: 4))
+          ..repeat();
+
+    particlePositions = List.generate(
+        particleCount,
+        (_) => Offset(random.nextDouble(), random.nextDouble()));
+    particleSizes =
+        List.generate(particleCount, (_) => random.nextDouble() * 2 + 1);
+
     _startSplashSequence();
   }
 
   Future<void> _startSplashSequence() async {
     final connected = await isUserConnected();
 
-    // 🎬 ANIMATION IDENTIQUE
-    await Future.delayed(const Duration(seconds: 2));
-    setState(() => _showFirstImage = true);
-
-   
     await Future.delayed(const Duration(seconds: 1));
-    setState(() => _isBlackBackground = true);
-
-    await Future.delayed(const Duration(milliseconds: 800));
-    setState(() {
-      _showFirstImage = false;
-      _showSecondImage = true;
-    });
-
-    await Future.delayed(const Duration(milliseconds: 500));
     setState(() => _showText = true);
 
-    await Future.delayed(const Duration(seconds: 1));
+    await Future.delayed(const Duration(seconds: 3));
 
-    // 🧠 DÉCISION FINALE
     if (connected) {
-      _navigateToHomePage();
+      _navigateToOnboardingPage();
     } else {
       _navigateToOnboardingPage();
     }
   }
 
-  // ✅ VRAIE vérification de connexion
   Future<bool> isUserConnected() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('access_token') != null;
-  }
-
-  void _navigateToHomePage() {
-    Navigator.pushReplacement(
-      context,
-      PageRouteBuilder(
-        transitionDuration: const Duration(milliseconds: 800),
-        pageBuilder: (_, __, ___) => OnboardingScreen(
-           userRole: '', orderId: widget.orderId,
-        ),
-        transitionsBuilder: (_, animation, __, child) {
-          final tween = Tween(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).chain(CurveTween(curve: Curves.easeInOut));
-
-          return SlideTransition(
-            position: animation.drive(tween),
-            child: child,
-          );
-        },
-      ),
-    );
   }
 
   void _navigateToOnboardingPage() {
@@ -96,81 +72,141 @@ class _SplashScreenState extends State<SplashScreen>
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 800),
         pageBuilder: (_, __, ___) =>
-            OnboardingScreen(userRole: '', orderId: widget.orderId,),
+            OnboardingScreen(userRole: '', orderId: widget.orderId),
         transitionsBuilder: (_, animation, __, child) {
           final tween = Tween(
             begin: const Offset(1, 0),
             end: Offset.zero,
           ).chain(CurveTween(curve: Curves.easeInOut));
-
-          return SlideTransition(
-            position: animation.drive(tween),
-            child: child,
-          );
+          return SlideTransition(position: animation.drive(tween), child: child);
         },
       ),
     );
   }
 
   @override
+  void dispose() {
+    _logoController.dispose();
+    _particleController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(
-      SystemUiOverlayStyle.dark.copyWith(
-        statusBarColor: Colors.black,
-        statusBarIconBrightness: Brightness.light,
-      ),
-    );
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle.dark.copyWith(
+      statusBarColor: Colors.black,
+      statusBarIconBrightness: Brightness.light,
+    ));
 
     return Scaffold(
-      body: AnimatedContainer(
-        duration: const Duration(seconds: 1),
-        color: _isBlackBackground ? Colors.black : Colors.white,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  if (_showFirstImage)
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 800),
-                     
-                    
-                    ),
-                  AnimatedOpacity(
-                    opacity: _showSecondImage ? 1 : 0,
-                    duration: const Duration(milliseconds: 800),
-                   
-                  ),
-                ],
-              ),
-              if (_showText)
-                Animate(
-                  effects: const [
-                    MoveEffect(
-                      begin: Offset(200, 0),
-                      end: Offset(0, 0),
-                      duration: Duration(milliseconds: 800),
-                    ),
-                  ],
-                  child: Text(
-                    'DeliGood',
-                    style: TextStyle(
-                      color: _isBlackBackground
-                          ? Colors.white
-                          : Colors.black,
-                      fontSize: 25.sp,
-                      fontWeight: FontWeight.w400,
-                      fontFamily: 'Hemi head',
-                      letterSpacing: 0.05,
-                    ),
+      backgroundColor: Colors.black,
+      body: Stack(
+        children: [
+          // ------------------ PARTICULES ------------------
+          AnimatedBuilder(
+            animation: _particleController,
+            builder: (_, __) {
+              return CustomPaint(
+                painter: ParticlePainter(
+                  particlePositions,
+                  particleSizes,
+                  _particleController.value,
+                ),
+                child: Container(),
+              );
+            },
+          ),
+
+          Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                // ---------------- LOGO CENTRAL ----------------
+                AnimatedBuilder(
+                  animation: _logoController,
+                  builder: (_, child) {
+                    double scale =
+                        1 + 0.1 * sin(2 * pi * _logoController.value);
+                    double rotate = 0.1 * sin(2 * pi * _logoController.value);
+                    return Transform.rotate(
+                      angle: rotate,
+                      child: Transform.scale(
+                        scale: scale,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Halo glow
+                      Icon(Icons.delivery_dining,
+                          size: 24.w, color: Colors.deepOrange.withOpacity(0.2)),
+                      Icon(Icons.delivery_dining,
+                          size: 20.w, color: Colors.deepOrange),
+                    ],
                   ),
                 ),
-            ],
+
+                const SizedBox(height: 4),
+
+                // ---------------- TEXTE ----------------
+                if (_showText)
+                  Text(
+                    'DeliGood',
+                    style: TextStyle(
+                      fontSize: 28.sp,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.deepOrangeAccent,
+                      shadows: [
+                        Shadow(
+                          blurRadius: 10,
+                          color: Colors.deepOrangeAccent.withOpacity(0.6),
+                          offset: const Offset(0, 0),
+                        )
+                      ],
+                      letterSpacing: 1.2,
+                    ),
+                  ).animate().fadeIn(duration: 800.ms).slideY(begin: 0.3, end: 0),
+
+                const SizedBox(height: 8),
+
+                // ---------------- MINI LOADER DIGITAL ----------------
+                SizedBox(
+                  width: 12.w,
+                  height: 12.w,
+                  child: CircularProgressIndicator(
+                    color: Colors.deepOrangeAccent,
+                    strokeWidth: 2.5,
+                  ),
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+// ---------------- PARTICLE PAINTER ----------------
+class ParticlePainter extends CustomPainter {
+  final List<Offset> positions;
+  final List<double> sizes;
+  final double progress;
+
+  ParticlePainter(this.positions, this.sizes, this.progress);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.deepOrange.withOpacity(0.2);
+    for (int i = 0; i < positions.length; i++) {
+      double x = (positions[i].dx * size.width + progress * 50) % size.width;
+      double y = (positions[i].dy * size.height + progress * 50) % size.height;
+      canvas.drawCircle(Offset(x, y), sizes[i], paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant ParticlePainter oldDelegate) => true;
 }

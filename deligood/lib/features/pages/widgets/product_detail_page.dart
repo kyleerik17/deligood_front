@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
-
 import '../../../core/api.dart';
 
 class ProductDetailPage extends StatefulWidget {
@@ -23,20 +22,25 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Colors.grey.shade50,
       body: SafeArea(
         child: Stack(
           children: [
-            // IMAGE
+            // IMAGE DE FOND
             SizedBox(
               height: 40.h,
               width: double.infinity,
-              child: Image.network(
-                widget.item.imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: Colors.grey.shade300,
-                  child: const Icon(Icons.broken_image, size: 80),
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(
+                  bottom: Radius.circular(30),
+                ),
+                child: Image.network(
+                  widget.item.imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: Colors.grey.shade300,
+                    child: const Icon(Icons.broken_image, size: 80),
+                  ),
                 ),
               ),
             ),
@@ -45,13 +49,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
             Positioned(
               top: 2.h,
               left: 2.w,
-              child: IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.black),
-                onPressed: () => Navigator.pop(context),
+              child: CircleAvatar(
+                backgroundColor: Colors.white.withOpacity(0.8),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.black),
+                  onPressed: () => Navigator.pop(context),
+                ),
               ),
             ),
 
-            // CONTENU
+            // CONTENU GLASSY SHEET
             DraggableScrollableSheet(
               initialChildSize: 0.65,
               minChildSize: 0.65,
@@ -60,14 +67,22 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                 return Container(
                   padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: Colors.white.withOpacity(0.95),
                     borderRadius: BorderRadius.vertical(
                       top: Radius.circular(4.h),
                     ),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 8,
+                        offset: Offset(0, -4),
+                      ),
+                    ],
                   ),
                   child: ListView(
                     controller: scrollController,
                     children: [
+                      // INDICATEUR DRAG
                       Center(
                         child: Container(
                           width: 10.w,
@@ -81,44 +96,47 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                       SizedBox(height: 2.h),
 
                       // NOM + PRIX
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
+                      Center(
+                        child: Column(
+                          children: [
+                            Text(
                               widget.item.name,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 20.sp,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
-                          ),
-                          Text(
-                            "${widget.item.price} FCFA",
-                            style: TextStyle(
-                              fontSize: 18.sp,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.green.shade700,
+                            SizedBox(height: 1.h),
+                            Text(
+                              "${widget.item.price} FCFA",
+                              style: TextStyle(
+                                fontSize: 18.sp,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepOrange,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
 
                       SizedBox(height: 1.h),
 
                       if (widget.item.category != null)
-                        Text(
-                          widget.item.category!,
-                          style: TextStyle(
-                            fontSize: 13.sp,
-                            color: Colors.grey.shade600,
+                        Center(
+                          child: Text(
+                            widget.item.category!,
+                            style: TextStyle(
+                              fontSize: 13.sp,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                         ),
 
                       SizedBox(height: 3.h),
 
                       // QUANTITÉ
+                      // Remplace le Row actuel de quantité par ce widget
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -129,26 +147,74 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          Row(
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline),
-                                onPressed: quantity > 1
-                                    ? () => setState(() => quantity--)
-                                    : null,
-                              ),
-                              Text(
-                                quantity.toString(),
-                                style: TextStyle(
-                                  fontSize: 16.sp,
-                                  fontWeight: FontWeight.bold,
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Colors.black12,
+                                  blurRadius: 4,
+                                  offset: Offset(0, 2),
                                 ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline),
-                                onPressed: () => setState(() => quantity++),
-                              ),
-                            ],
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                // BOUTON -
+                                GestureDetector(
+                                  onTap: quantity > 1
+                                      ? () => setState(() => quantity--)
+                                      : null,
+                                  child: Container(
+                                    width: 10.w,
+                                    height: 10.w,
+                                    decoration: BoxDecoration(
+                                      color: quantity > 1
+                                          ? Colors.deepOrange
+                                          : Colors.grey.shade300,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.remove,
+                                      color: Colors.white,
+                                      size: 18.sp,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 4.w),
+                                // NOMBRE
+                                Container(
+                                  width: 10.w,
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    quantity.toString(),
+                                    style: TextStyle(
+                                      fontSize: 16.sp,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                                SizedBox(width: 4.w),
+                                // BOUTON +
+                                GestureDetector(
+                                  onTap: () => setState(() => quantity++),
+                                  child: Container(
+                                    width: 10.w,
+                                    height: 10.w,
+                                    decoration: BoxDecoration(
+                                      color: Colors.deepOrange,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      Icons.add,
+                                      color: Colors.white,
+                                      size: 18.sp,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -172,6 +238,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
                           color: Colors.grey.shade700,
                           height: 1.5,
                         ),
+                        textAlign: TextAlign.justify,
                       ),
 
                       SizedBox(height: 12.h),
@@ -181,28 +248,14 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
               },
             ),
 
-            // BOUTON AJOUT PANIER
             Positioned(
               bottom: 2.h,
               left: 4.w,
               right: 4.w,
-              child: SizedBox(
-                height: 6.5.h,
-                child: ElevatedButton(
-                  onPressed: isLoading ? null : _addToCart,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.black,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(3.h),
-                    ),
-                  ),
-                  child: isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(
-                          "Ajouter au panier ($quantity)",
-                          style: TextStyle(fontSize: 16.sp),
-                        ),
-                ),
+              child: SlideToAddCart(
+                quantity: quantity,
+                isLoading: isLoading,
+                onConfirm: _addToCart,
               ),
             ),
           ],
@@ -221,17 +274,16 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       if (token == null) throw Exception("Utilisateur non connecté");
 
       final response = await http.post(
-  Uri.parse('${ApiConfig.baseUrl}/api/cart/add/'),
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': 'Token $token',
-  },
-  body: jsonEncode({
-    'menu_item_id': widget.item.id,
-    'quantity': quantity,
-  }),
-);
-
+        Uri.parse('${ApiConfig.baseUrl}/api/orders/cart/add/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Token $token',
+        },
+        body: jsonEncode({
+          'menu_item_id': widget.item.id,
+          'quantity': quantity,
+        }),
+      );
 
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -253,5 +305,135 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
     } finally {
       setState(() => isLoading = false);
     }
+  }
+}
+
+class SlideToAddCart extends StatefulWidget {
+  final int quantity;
+  final bool isLoading;
+  final VoidCallback onConfirm;
+
+  const SlideToAddCart({
+    super.key,
+    required this.quantity,
+    required this.isLoading,
+    required this.onConfirm,
+  });
+
+  @override
+  State<SlideToAddCart> createState() => _SlideToAddCartState();
+}
+
+class _SlideToAddCartState extends State<SlideToAddCart> {
+  double dragPosition = 0.0;
+  bool confirmed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = MediaQuery.of(context).size.width - 8.w;
+
+    return Stack(
+      children: [
+        // BACKGROUND
+        Container(
+          height: 7.h,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade300,
+            borderRadius: BorderRadius.circular(3.5.h),
+          ),
+        ),
+
+        // PROGRESS BAR
+        Positioned(
+          left: 0,
+          child: Container(
+            height: 7.h,
+            width: dragPosition + 7.h,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFFFA726), Color(0xFFFF5722)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(3.5.h),
+            ),
+          ),
+        ),
+
+        // TEXTE
+        Container(
+          height: 7.h,
+          alignment: Alignment.center,
+          child: widget.isLoading
+              ? const CircularProgressIndicator(color: Colors.white)
+              : Text(
+                  confirmed
+                      ? "Ajouté au panier !"
+                      : "Glisser pour ajouter au panier • ${widget.quantity}",
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 16.sp,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+        ),
+
+        // SLIDER
+        Positioned(
+          left: dragPosition,
+          child: GestureDetector(
+            onHorizontalDragUpdate: (details) {
+              setState(() {
+                dragPosition += details.delta.dx;
+                if (dragPosition < 0) dragPosition = 0;
+                if (dragPosition > width - 7.h) dragPosition = width - 7.h;
+              });
+            },
+            onHorizontalDragEnd: (details) {
+              if (dragPosition >= width - 7.h - 5) {
+                // ARRIVÉE À DROITE
+                setState(() {
+                  confirmed = true;
+                  dragPosition = width - 7.h;
+                });
+
+                widget.onConfirm(); // Ajout au panier
+
+                // RESET après 800ms pour nouvelle utilisation
+                Future.delayed(const Duration(milliseconds: 800), () {
+                  setState(() {
+                    confirmed = false;
+                    dragPosition = 0.0;
+                  });
+                });
+              } else {
+                // Retour si incomplet
+                setState(() => dragPosition = 0.0);
+              }
+            },
+            child: Container(
+              height: 7.h,
+              width: 7.h,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 4,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: confirmed
+                  ? const Icon(Icons.check, color: Colors.green)
+                  : const Icon(Icons.arrow_forward, color: Colors.deepOrange),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

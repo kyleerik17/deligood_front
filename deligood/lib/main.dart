@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Pages
 import 'package:deligood/features/auth/screens/login/login_page.dart';
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
+import 'package:deligood/features/client/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,13 +31,12 @@ class MyApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'DéliGood',
           theme: ThemeData(primarySwatch: Colors.blue),
-          home: AuthWrapper(orderId: orderId),
+          home: SplashScreen(orderId: orderId),
         );
       },
     );
   }
 }
-
 
 class AuthWrapper extends StatefulWidget {
   final int orderId; // Id de la commande à suivre
@@ -72,9 +72,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (userRole != null) {

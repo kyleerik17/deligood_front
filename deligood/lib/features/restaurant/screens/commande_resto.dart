@@ -1,8 +1,10 @@
 import 'dart:convert';
-import 'package:deligood/core/api.dart';
 import 'package:flutter/material.dart';
+import 'package:gap/gap.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:intl/intl.dart';
+import 'package:sizer/sizer.dart';
 
 // ======================= MODELES =========================
 class CommandeItem {
@@ -20,9 +22,9 @@ class CommandeItem {
 
   factory CommandeItem.fromJson(Map<String, dynamic> json) {
     return CommandeItem(
-      name: json['menu_item']?['name'] ?? "Plat",
+      name: json['menu_item_name'] ?? "Plat",
       quantity: json['quantity'] ?? 1,
-      price: double.tryParse((json['total_price'] ?? json['price'] ?? "0").toString()) ?? 0.0,
+      price: double.tryParse((json['price'] ?? "0").toString()) ?? 0.0,
       unitPrice: double.tryParse((json['unit_price'] ?? "0").toString()) ?? 0.0,
     );
   }
@@ -32,37 +34,46 @@ class CommandeResto {
   final int id;
   final String clientName;
   final String status;
-  final double totalPrice;
+  final double totalPlats;
+  final double deliveryFee;
   final DateTime createdAt;
   final List<CommandeItem> items;
   final String address;
   final String phone;
-  final double deliveryFee;
 
   CommandeResto({
     required this.id,
     required this.clientName,
     required this.status,
-    required this.totalPrice,
+    required this.totalPlats,
+    required this.deliveryFee,
     required this.createdAt,
     required this.items,
     required this.address,
     required this.phone,
-    required this.deliveryFee,
   });
 
+  double get total => totalPlats + deliveryFee;
+
   factory CommandeResto.fromJson(Map<String, dynamic> json) {
-    final itemsJson = json['items'] as List<dynamic>? ?? [];
+    final itemsJson = (json['items'] as List<dynamic>? ?? [])
+        .whereType<Map<String, dynamic>>()
+        .map((e) => CommandeItem.fromJson(e))
+        .toList();
+
+    double totalPlats = itemsJson.fold(0.0, (sum, item) => sum + item.price);
+    double deliveryFee = totalPlats * 0.03;
+
     return CommandeResto(
-      id: json['id'],
+      id: json['id'] ?? 0,
       clientName: json['client_name'] ?? "Client",
+      phone: json['client_phone'] ?? "0000000000",
+      address: json['client_address'] ?? "Adresse non définie",
       status: json['status'] ?? "pending",
-      totalPrice: double.tryParse(json['total_price'].toString()) ?? 0.0,
-      createdAt: DateTime.parse(json['created_at']),
-      items: itemsJson.map((e) => CommandeItem.fromJson(e)).toList(),
-      address: json['address'] ?? "Adresse non définie",
-      phone: json['phone'] ?? "0000000000",
-      deliveryFee: double.tryParse(json['delivery_fee']?.toString() ?? "0.0") ?? 0.0,
+      totalPlats: totalPlats,
+      deliveryFee: deliveryFee,
+      createdAt: DateTime.tryParse(json['created_at'] ?? "") ?? DateTime.now(),
+      items: itemsJson,
     );
   }
 }
@@ -93,6 +104,7 @@ class CommandeRestoPage extends StatefulWidget {
 
 class _CommandeRestoPageState extends State<CommandeRestoPage> {
   late Future<List<CommandeResto>> _commandesFuture;
+  static const String baseUrl = "https://deligood-backend.onrender.com/";
 
   @override
   void initState() {
@@ -112,7 +124,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
     };
 
     final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}/orders/restaurant/'), // <-- utilisation du baseUrl
+      Uri.parse('$baseUrl/api/orders/orders/restaurant/'),
       headers: headers,
     );
 
@@ -130,7 +142,13 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Vos commandes"), centerTitle: true),
+      backgroundColor: Colors.grey.shade100,
+      appBar: AppBar(
+        backgroundColor: Colors.deepOrange,
+        title: const Text("Vos commandes"),
+        centerTitle: true,
+        elevation: 0,
+      ),
       body: FutureBuilder<List<CommandeResto>>(
         future: _commandesFuture,
         builder: (context, snapshot) {
@@ -147,44 +165,86 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
             return const Center(child: Text("Aucune commande pour l'instant"));
           }
 
-          return ListView.separated(
+          return ListView.builder(
+            padding: EdgeInsets.all(4.w),
             itemCount: commandes.length,
-            separatorBuilder: (_, __) => const Divider(),
             itemBuilder: (context, index) {
               final cmd = commandes[index];
-              return ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: statusColor(cmd.status),
-                  child: Text(
-                    cmd.clientName.substring(0, 1).toUpperCase(),
-                    style: const TextStyle(color: Colors.white),
+              return Container(
+                margin: EdgeInsets.only(bottom: 3.h),
+                padding: EdgeInsets.all(4.w),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.orange.shade200,
+                      Colors.deepOrange.shade400,
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
                   ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 6,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
                 ),
-                title: Text(cmd.clientName),
-                subtitle: Text(
-                  "Total: ${cmd.totalPrice.toStringAsFixed(2)} FCFA\n${cmd.createdAt.toLocal()}",
-                  style: const TextStyle(fontSize: 12),
-                ),
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: statusColor(cmd.status).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    cmd.status.toUpperCase(),
-                    style: TextStyle(
-                      color: statusColor(cmd.status),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
+                child: ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    radius: 28,
+                    backgroundColor: Colors.white,
+                    child: Text(
+                      cmd.clientName[0].toUpperCase(),
+                      style: TextStyle(
+                        fontSize: 16.sp,
+                        fontWeight: FontWeight.bold,
+                        color: statusColor(cmd.status),
+                      ),
                     ),
                   ),
-                ),
-                onTap: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CommandeDetailPage(commande: cmd),
+                  title: Text(
+                    cmd.clientName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
                   ),
+                  subtitle: Text(
+                    "Total: ${cmd.total.toStringAsFixed(2)} FCFA\nDate: ${DateFormat('dd/MM/yyyy – kk:mm').format(cmd.createdAt.toLocal())}",
+                    style: TextStyle(color: Colors.white70, fontSize: 12.sp),
+                  ),
+                  trailing: Container(
+                    padding: EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      cmd.status.toUpperCase(),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12.sp,
+                      ),
+                    ),
+                  ),
+                  onTap: () async {
+                    final result = await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => CommandeDetailPage(commande: cmd),
+                      ),
+                    );
+
+                    if (result == true) {
+                      setState(() {
+                        _commandesFuture = fetchCommandesResto();
+                      });
+                    }
+                  },
                 ),
               );
             },
@@ -195,9 +255,10 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
   }
 }
 
-// ======================= PAGE DETAIL COMMANDE =========================
+// ======================= PAGE DETAIL COMMANDE PREMIUM =========================
 class CommandeDetailPage extends StatelessWidget {
   final CommandeResto commande;
+  static const String baseUrl = "https://deligood-backend.onrender.com/";
 
   const CommandeDetailPage({super.key, required this.commande});
 
@@ -206,15 +267,17 @@ class CommandeDetailPage extends StatelessWidget {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
 
-      if (token == null) {
-        throw Exception("Utilisateur non connecté");
-      }
+      if (token == null) throw Exception("Utilisateur non connecté");
 
       final response = await http.patch(
-        Uri.parse('${ApiConfig.baseUrl}/orders/restaurant/${commande.id}/status/'), // <-- baseUrl
+        Uri.parse(
+          '$baseUrl/api/orders/orders/restaurant/${commande.id}/status/',
+        ),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token.startsWith("ey") ? 'Bearer $token' : 'Token $token',
+          'Authorization': token.startsWith("ey")
+              ? 'Bearer $token'
+              : 'Token $token',
         },
         body: jsonEncode({"status": "accepted"}),
       );
@@ -226,7 +289,6 @@ class CommandeDetailPage extends StatelessWidget {
             backgroundColor: Colors.green,
           ),
         );
-
         Navigator.pop(context, true);
       } else {
         throw Exception(response.body);
@@ -243,74 +305,147 @@ class CommandeDetailPage extends StatelessWidget {
     final bool dejaPrise = commande.status.toLowerCase() != 'pending';
 
     return Scaffold(
+      backgroundColor: Colors.grey.shade100,
       appBar: AppBar(
+        backgroundColor: Colors.deepOrange,
         title: Text("Commande #${commande.id}"),
         centerTitle: true,
+        elevation: 0,
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
+      body: Padding(
+        padding: EdgeInsets.all(4.w),
+        child: Column(
+          children: [
+            // Card client info
+            Container(
+              padding: EdgeInsets.all(4.w),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Colors.black12,
+                    blurRadius: 6,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text("Client : ${commande.clientName}",
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text("Status : ${commande.status.toUpperCase()}",
-                      style: TextStyle(
-                          fontSize: 16,
-                          color: statusColor(commande.status),
-                          fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 8),
-                  Text("Total : ${commande.totalPrice.toStringAsFixed(2)} FCFA"),
-                  const SizedBox(height: 8),
-                  Text("Date : ${commande.createdAt.toLocal()}"),
-                  const Divider(height: 32),
-                  const Text("Items :", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Text("Adresse : ${commande.address}"),
-                  Text("Téléphone : ${commande.phone}"),
-                  Text("Frais de livraison : ${commande.deliveryFee.toStringAsFixed(2)} FCFA"),
-
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: commande.items.length,
-                      itemBuilder: (context, index) {
-                        final item = commande.items[index];
-                        return ListTile(
-                          title: Text(item.name),
-                          subtitle: Text("Quantité : ${item.quantity}"),
-                          trailing: Text("Prix unitaire : ${item.unitPrice.toStringAsFixed(2)} FCFA"),
-                        );
-                      },
+                  Text(
+                    "Client : ${commande.clientName}",
+                    style: TextStyle(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.bold,
                     ),
+                  ),
+                  Text(
+                    "Téléphone : ${commande.phone}",
+                    style: TextStyle(fontSize: 12.sp),
+                  ),
+                  Text(
+                    "Adresse : ${commande.address}",
+                    style: TextStyle(fontSize: 12.sp),
+                  ),
+                  Text(
+                    "Date : ${DateFormat('dd/MM/yyyy – kk:mm').format(commande.createdAt.toLocal())}",
+                    style: TextStyle(fontSize: 12.sp),
+                  ),
+                  SizedBox(height: 2.h),
+                  Row(
+                    children: [
+                      Chip(
+                        label: Text(
+                          commande.status.toUpperCase(),
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        backgroundColor: statusColor(commande.status),
+                      ),
+                      const Spacer(),
+                      Text(
+                        "Total: ${commande.total.toStringAsFixed(2)} FCFA",
+                        style: TextStyle(
+                          fontSize: 14.sp,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.deepOrange,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-          ),
-
-          if (!dejaPrise)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  onPressed: () => prendreCommande(context),
-                  child: const Text(
-                    "PRENDRE LA COMMANDE",
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
-                  ),
+            Gap(2.h),
+            // Items list
+            Expanded(
+              child: Container(
+                padding: EdgeInsets.all(2.w),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black12,
+                      blurRadius: 6,
+                      offset: Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ListView.separated(
+                  itemCount: commande.items.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(color: Colors.grey.shade300),
+                  itemBuilder: (context, index) {
+                    final item = commande.items[index];
+                    return ListTile(
+                      title: Text(
+                        item.name,
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text("Quantité : ${item.quantity}"),
+                      trailing: Text(
+                        "${item.unitPrice.toStringAsFixed(2)} FCFA",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.deepOrange,
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
-        ],
+            if (!dejaPrise)
+              Padding(
+                padding: EdgeInsets.only(top: 2.h),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 6.h,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepOrange,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () => prendreCommande(context),
+                    child: Text(
+                      "ACCEPTER COMMANDE",
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
