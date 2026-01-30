@@ -204,6 +204,8 @@ class MenuItem {
   final String price;
   final String category;
   final String restaurant;
+  final String description;
+  final int restaurantId;
 
   MenuItem({
     required this.name,
@@ -211,18 +213,19 @@ class MenuItem {
     required this.price,
     required this.category,
     required this.restaurant,
+    required this.restaurantId,
+    required this.description,
   });
 
   factory MenuItem.fromJson(Map<String, dynamic> json) {
     return MenuItem(
       name: json['name'] ?? 'Sans nom',
-      imageUrl: json['image'] != null
-          ? 'http://deligood-production.up.railway.app${json['assets/images/n.png']}'
-          : '',
+      imageUrl: json['image'] != null ? 'assets/images/n.png' : '',
       price: json['price'].toString(),
       category: json['category_name'] ?? 'Non classé', // Utiliser category_name
-      restaurant: (json['restaurant'] ?? 'Restaurant')
-          .toString(), // Convertir en String
+      restaurant: (json['restaurant'] ?? 'Restaurant').toString(),
+      restaurantId: json['restaurantId'], // Convertir en String
+      description: json['description']
     );
   }
 }

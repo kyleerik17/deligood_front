@@ -1,10 +1,11 @@
 import 'dart:convert';
+import 'package:deligood/core/network/api.dart';
 import 'package:deligood/models/menu_item.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
-import '../../../core/api.dart';
+
 
 class ProductDetailPage extends StatefulWidget {
   final MenuItem item;
@@ -274,7 +275,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       if (token == null) throw Exception("Utilisateur non connecté");
 
       final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/api/orders/cart/add/'),
+        Uri.parse('${Api.baseUrl}/api/orders/cart/add/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Token $token',

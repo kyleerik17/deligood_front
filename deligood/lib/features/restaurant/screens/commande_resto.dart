@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:http/http.dart' as http;
@@ -6,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:sizer/sizer.dart';
 
-// ======================= MODELES =========================
+/// ======================= MODELES =========================
 class CommandeItem {
   final String name;
   final int quantity;
@@ -24,8 +25,8 @@ class CommandeItem {
     return CommandeItem(
       name: json['menu_item_name'] ?? "Plat",
       quantity: json['quantity'] ?? 1,
-      price: double.tryParse((json['price'] ?? "0").toString()) ?? 0.0,
-      unitPrice: double.tryParse((json['unit_price'] ?? "0").toString()) ?? 0.0,
+      price: double.tryParse(json['price'].toString()) ?? 0,
+      unitPrice: double.tryParse(json['unit_price'].toString()) ?? 0,
     );
   }
 }
@@ -34,8 +35,6 @@ class CommandeResto {
   final int id;
   final String clientName;
   final String status;
-  final double totalPlats;
-  final double deliveryFee;
   final DateTime createdAt;
   final List<CommandeItem> items;
   final String address;
@@ -45,42 +44,35 @@ class CommandeResto {
     required this.id,
     required this.clientName,
     required this.status,
-    required this.totalPlats,
-    required this.deliveryFee,
     required this.createdAt,
     required this.items,
     required this.address,
     required this.phone,
   });
 
-  double get total => totalPlats + deliveryFee;
+  double get total =>
+      items.fold<double>(0.0, (sum, item) => sum + item.price) * 1.03;
 
   factory CommandeResto.fromJson(Map<String, dynamic> json) {
-    final itemsJson = (json['items'] as List<dynamic>? ?? [])
-        .whereType<Map<String, dynamic>>()
+    final items = (json['items'] as List)
         .map((e) => CommandeItem.fromJson(e))
         .toList();
 
-    double totalPlats = itemsJson.fold(0.0, (sum, item) => sum + item.price);
-    double deliveryFee = totalPlats * 0.03;
-
     return CommandeResto(
-      id: json['id'] ?? 0,
+      id: json['id'],
       clientName: json['client_name'] ?? "Client",
-      phone: json['client_phone'] ?? "0000000000",
-      address: json['client_address'] ?? "Adresse non définie",
-      status: json['status'] ?? "pending",
-      totalPlats: totalPlats,
-      deliveryFee: deliveryFee,
-      createdAt: DateTime.tryParse(json['created_at'] ?? "") ?? DateTime.now(),
-      items: itemsJson,
+      phone: json['client_phone'] ?? "",
+      address: json['client_address'] ?? "",
+      status: json['status'],
+      createdAt: DateTime.parse(json['created_at']),
+      items: items,
     );
   }
 }
 
-// ======================= UTILITAIRES =========================
+/// ======================= UTILS =========================
 Color statusColor(String status) {
-  switch (status.toLowerCase()) {
+  switch (status) {
     case 'pending':
       return Colors.orange;
     case 'accepted':
@@ -94,7 +86,7 @@ Color statusColor(String status) {
   }
 }
 
-// ======================= PAGE LISTE COMMANDES =========================
+/// ======================= PAGE LISTE =========================
 class CommandeRestoPage extends StatefulWidget {
   const CommandeRestoPage({super.key});
 
@@ -103,67 +95,49 @@ class CommandeRestoPage extends StatefulWidget {
 }
 
 class _CommandeRestoPageState extends State<CommandeRestoPage> {
-  late Future<List<CommandeResto>> _commandesFuture;
-  static const String baseUrl = "https://deligood-backend.onrender.com/";
+  static const baseUrl = "http://127.0.0.1:8000";
+  late Future<List<CommandeResto>> _future;
 
   @override
   void initState() {
     super.initState();
-    _commandesFuture = fetchCommandesResto();
+    _future = fetchCommandes();
   }
 
-  Future<List<CommandeResto>> fetchCommandesResto() async {
+  Future<List<CommandeResto>> fetchCommandes() async {
     final prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('access_token');
-    if (token == null) throw Exception("Token manquant");
-
-    final isJwt = token.startsWith("ey");
-    final headers = {
-      'Content-Type': 'application/json',
-      'Authorization': isJwt ? 'Bearer $token' : 'Token $token',
-    };
-
+    final token = prefs.getString('access_token')!;
     final response = await http.get(
       Uri.parse('$baseUrl/api/orders/orders/restaurant/'),
-      headers: headers,
+      headers: {
+        'Authorization': token.startsWith('ey')
+            ? 'Bearer $token'
+            : 'Token $token',
+      },
     );
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      return data.map((e) => CommandeResto.fromJson(e)).toList();
-    } else if (response.statusCode == 401) {
-      await prefs.remove('access_token');
-      throw Exception("Token invalide ou expiré. Veuillez vous reconnecter.");
-    } else {
-      throw Exception("Erreur API: ${response.statusCode}");
-    }
+    final data = jsonDecode(response.body) as List;
+    return data.map((e) => CommandeResto.fromJson(e)).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: const Color(0xFFF7F7F7),
       appBar: AppBar(
-        backgroundColor: Colors.deepOrange,
-        title: const Text("Vos commandes"),
+        title: const Text("Commandes"),
         centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
         elevation: 0,
       ),
       body: FutureBuilder<List<CommandeResto>>(
-        future: _commandesFuture,
+        future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (snapshot.hasError) {
-            return Center(child: Text("Erreur : ${snapshot.error}"));
-          }
-
           final commandes = snapshot.data ?? [];
-          if (commandes.isEmpty) {
-            return const Center(child: Text("Aucune commande pour l'instant"));
-          }
 
           return ListView.builder(
             padding: EdgeInsets.all(4.w),
@@ -171,66 +145,21 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
             itemBuilder: (context, index) {
               final cmd = commandes[index];
               return Container(
-                margin: EdgeInsets.only(bottom: 3.h),
+                margin: EdgeInsets.only(bottom: 2.h),
                 padding: EdgeInsets.all(4.w),
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(20),
-                  gradient: LinearGradient(
-                    colors: [
-                      Colors.orange.shade200,
-                      Colors.deepOrange.shade400,
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  boxShadow: const [
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [
                     BoxShadow(
-                      color: Colors.black26,
-                      blurRadius: 6,
-                      offset: Offset(0, 4),
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
                     ),
                   ],
                 ),
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Colors.white,
-                    child: Text(
-                      cmd.clientName[0].toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 16.sp,
-                        fontWeight: FontWeight.bold,
-                        color: statusColor(cmd.status),
-                      ),
-                    ),
-                  ),
-                  title: Text(
-                    cmd.clientName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  subtitle: Text(
-                    "Total: ${cmd.total.toStringAsFixed(2)} FCFA\nDate: ${DateFormat('dd/MM/yyyy – kk:mm').format(cmd.createdAt.toLocal())}",
-                    style: TextStyle(color: Colors.white70, fontSize: 12.sp),
-                  ),
-                  trailing: Container(
-                    padding: EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      cmd.status.toUpperCase(),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12.sp,
-                      ),
-                    ),
-                  ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(18),
                   onTap: () async {
                     final result = await Navigator.push(
                       context,
@@ -238,13 +167,78 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
                         builder: (_) => CommandeDetailPage(commande: cmd),
                       ),
                     );
-
                     if (result == true) {
-                      setState(() {
-                        _commandesFuture = fetchCommandesResto();
-                      });
+                      setState(() => _future = fetchCommandes());
                     }
                   },
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: statusColor(
+                          cmd.status,
+                        ).withOpacity(0.15),
+                        child: Text(
+                          cmd.clientName[0].toUpperCase(),
+                          style: TextStyle(
+                            color: statusColor(cmd.status),
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      Gap(4.w),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              cmd.clientName,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15.sp,
+                              ),
+                            ),
+                            Gap(0.6.h),
+                            Text(
+                              DateFormat(
+                                'dd MMM yyyy • HH:mm',
+                              ).format(cmd.createdAt),
+                              style: TextStyle(
+                                fontSize: 13.sp,
+                                color: Colors.grey,
+                              ),
+                            ),
+                            Gap(1.h),
+                            Text(
+                              "${cmd.total.toStringAsFixed(0)} FCFA",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.deepOrange,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor(cmd.status).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          cmd.status.toUpperCase(),
+                          style: TextStyle(
+                            color: statusColor(cmd.status),
+                            fontSize: 12.sp,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               );
             },
@@ -255,27 +249,24 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
   }
 }
 
-// ======================= PAGE DETAIL COMMANDE PREMIUM =========================
 class CommandeDetailPage extends StatelessWidget {
   final CommandeResto commande;
-  static const String baseUrl = "https://deligood-backend.onrender.com/";
+  static const baseUrl = "http://127.0.0.1:8000";
 
   const CommandeDetailPage({super.key, required this.commande});
 
-  Future<void> prendreCommande(BuildContext context) async {
+  // ================= ACCEPTER COMMANDE =================
+  Future<void> accepterCommande(BuildContext context) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('access_token');
-
-      if (token == null) throw Exception("Utilisateur non connecté");
+      if (token == null) throw Exception("Token manquant");
 
       final response = await http.patch(
-        Uri.parse(
-          '$baseUrl/api/orders/orders/restaurant/${commande.id}/status/',
-        ),
+        Uri.parse('$baseUrl/api/orders/restaurant/${commande.id}/status/'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token.startsWith("ey")
+          'Authorization': token.startsWith('ey')
               ? 'Bearer $token'
               : 'Token $token',
         },
@@ -285,13 +276,56 @@ class CommandeDetailPage extends StatelessWidget {
       if (response.statusCode == 200 || response.statusCode == 204) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text("Commande prise avec succès ✅"),
+            content: Text("Commande acceptée ✅"),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HomeRestaurant(orderId: commande.id),
+          ),
+        );
+      } else {
+        throw Exception("Erreur serveur ${response.statusCode}");
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erreur ❌ $e"), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  // ================= MARQUER LIVRÉE =================
+  Future<void> marquerLivree(BuildContext context) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      if (token == null) throw Exception("Token manquant");
+
+      final response = await http.patch(
+        Uri.parse(
+          'http://127.0.0.1:8000/api/orders/orders/restaurant/${commande.id}/status/',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token.startsWith('ey')
+              ? 'Bearer $token'
+              : 'Token $token',
+        },
+        body: jsonEncode({"status": "delivered"}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 204) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Commande livrée ✅"),
             backgroundColor: Colors.green,
           ),
         );
         Navigator.pop(context, true);
       } else {
-        throw Exception(response.body);
+        throw Exception("Erreur ${response.statusCode}");
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -302,31 +336,32 @@ class CommandeDetailPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool dejaPrise = commande.status.toLowerCase() != 'pending';
+    final dejaPrise = commande.status != 'pending';
+    final livrable = commande.status == 'accepted';
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: const Color(0xFFF7F7F7),
       appBar: AppBar(
-        backgroundColor: Colors.deepOrange,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black,
+        elevation: 0,
         title: Text("Commande #${commande.id}"),
         centerTitle: true,
-        elevation: 0,
       ),
       body: Padding(
         padding: EdgeInsets.all(4.w),
         child: Column(
           children: [
-            // Card client info
+            // ===== INFOS CLIENT =====
             Container(
               padding: EdgeInsets.all(4.w),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: [
                   BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 6,
-                    offset: Offset(0, 4),
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
                   ),
                 ],
               ),
@@ -334,42 +369,39 @@ class CommandeDetailPage extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    "Client : ${commande.clientName}",
+                    commande.clientName,
                     style: TextStyle(
                       fontSize: 16.sp,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  Text(
-                    "Téléphone : ${commande.phone}",
-                    style: TextStyle(fontSize: 12.sp),
-                  ),
-                  Text(
-                    "Adresse : ${commande.address}",
-                    style: TextStyle(fontSize: 12.sp),
-                  ),
-                  Text(
-                    "Date : ${DateFormat('dd/MM/yyyy – kk:mm').format(commande.createdAt.toLocal())}",
-                    style: TextStyle(fontSize: 12.sp),
-                  ),
-                  SizedBox(height: 2.h),
+                  Gap(1.h),
+                  Text("📞 ${commande.phone}"),
+                  Text("📍 ${commande.address}"),
+                  Gap(1.h),
                   Row(
                     children: [
-                      Chip(
-                        label: Text(
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor(commande.status).withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
                           commande.status.toUpperCase(),
                           style: TextStyle(
-                            color: Colors.white,
+                            color: statusColor(commande.status),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        backgroundColor: statusColor(commande.status),
                       ),
                       const Spacer(),
                       Text(
-                        "Total: ${commande.total.toStringAsFixed(2)} FCFA",
+                        "${commande.total.toStringAsFixed(0)} FCFA",
                         style: TextStyle(
-                          fontSize: 14.sp,
                           fontWeight: FontWeight.bold,
                           color: Colors.deepOrange,
                         ),
@@ -379,37 +411,28 @@ class CommandeDetailPage extends StatelessWidget {
                 ],
               ),
             ),
+
             Gap(2.h),
-            // Items list
+
+            // ===== LISTE DES ITEMS =====
             Expanded(
               child: Container(
-                padding: EdgeInsets.all(2.w),
+                padding: EdgeInsets.all(3.w),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 6,
-                      offset: Offset(0, 4),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(18),
                 ),
                 child: ListView.separated(
                   itemCount: commande.items.length,
-                  separatorBuilder: (_, __) =>
-                      Divider(color: Colors.grey.shade300),
-                  itemBuilder: (context, index) {
-                    final item = commande.items[index];
+                  separatorBuilder: (_, __) => const Divider(),
+                  itemBuilder: (_, i) {
+                    final item = commande.items[i];
                     return ListTile(
-                      title: Text(
-                        item.name,
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
+                      title: Text(item.name),
                       subtitle: Text("Quantité : ${item.quantity}"),
                       trailing: Text(
-                        "${item.unitPrice.toStringAsFixed(2)} FCFA",
-                        style: TextStyle(
+                        "${item.unitPrice.toStringAsFixed(0)} FCFA",
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.deepOrange,
                         ),
@@ -419,28 +442,44 @@ class CommandeDetailPage extends StatelessWidget {
                 ),
               ),
             ),
+
+            Gap(2.h),
+
+            // ===== BOUTONS ACTION =====
             if (!dejaPrise)
-              Padding(
-                padding: EdgeInsets.only(top: 2.h),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 6.h,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.deepOrange,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+              SizedBox(
+                width: double.infinity,
+                height: 6.h,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.deepOrange,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                    onPressed: () => prendreCommande(context),
-                    child: Text(
-                      "ACCEPTER COMMANDE",
-                      style: TextStyle(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+                  ),
+                  onPressed: () => accepterCommande(context),
+                  child: const Text(
+                    "ACCEPTER LA COMMANDE",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+
+            if (livrable)
+              SizedBox(
+                width: double.infinity,
+                height: 6.h,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
                     ),
+                  ),
+                  onPressed: () => marquerLivree(context),
+                  child: const Text(
+                    "MARQUER COMME LIVRÉE",
+                    style: TextStyle(fontWeight: FontWeight.bold),
                   ),
                 ),
               ),

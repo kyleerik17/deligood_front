@@ -24,8 +24,7 @@ class _InfoPersoPageState extends State<InfoPersoPage>
   final TextEditingController _phoneController = TextEditingController();
 
   bool _isModified = false;
-  static const String baseUrl =
-      "https://deligood-backend.onrender.com/"; // à changer si besoin
+  static const String baseUrl = "http://127.0.0.1:8000"; // à changer si besoin
 
   // Avatar
   Uint8List? _avatarBytes;

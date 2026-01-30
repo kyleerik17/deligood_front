@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'package:deligood/features/auth/screens/login/forget_password.dart';
-import 'package:deligood/features/auth/screens/register/register_page.dart'
-    hide ForgetPasswordPage;
-import 'package:deligood/features/client/screens/Home_screen.dart';
+import 'package:deligood/features/auth/screens/register/register_page.dart';
+import 'package:deligood/widgets/CustomBottomNavBar.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
@@ -35,6 +34,9 @@ class _LoginPageState extends State<LoginPage> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
     final userType = prefs.getString('user_type');
+    final restaurantId = prefs.getInt('restaurant_id') ?? 0;
+
+    print("Auto-login check -> token: $token, userType: $userType, restaurantId: $restaurantId");
 
     if (token != null && userType != null && mounted) {
       Navigator.pushReplacement(context, _createRoute(userType));
@@ -45,10 +47,12 @@ class _LoginPageState extends State<LoginPage> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => isLoading = true);
-
-    final url = Uri.parse(
-      'https://deligood-backend.onrender.com//api/users/login/',
+    print(
+      "Tentative de login avec téléphone: ${phoneController.text}, PIN: ${pinController.text}",
     );
+
+    // ⚠️ Remplace 127.0.0.1 par l’IP de ton PC sur le réseau ou ton URL en prod
+    final url = Uri.parse('http://127.0.0.1:8000/api/users/login/');
     final phone = phoneController.text.trim();
     final pin = pinController.text.trim();
 
@@ -59,15 +63,18 @@ class _LoginPageState extends State<LoginPage> {
         body: jsonEncode({'phone_number': phone, 'pin': pin}),
       );
 
+      print("Réponse serveur status: ${response.statusCode}");
+      print("Réponse serveur body: ${response.body}");
+
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 200) {
         await _saveUserData(data);
+        print("Login réussi, utilisateur sauvegardé.");
 
         if (!mounted) return;
 
         widget.onLoginSuccess(data['user']['user_type'] ?? '');
-
         Navigator.pushReplacement(
           context,
           _createRoute(data['user']['user_type'] ?? ''),
@@ -77,6 +84,7 @@ class _LoginPageState extends State<LoginPage> {
       }
     } catch (e) {
       _showError('Serveur inaccessible ou erreur réseau');
+      print("Exception lors du login: $e");
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
@@ -97,17 +105,28 @@ class _LoginPageState extends State<LoginPage> {
     await prefs.setString('last_name', user['last_name'] ?? '');
     await prefs.setString('phone_number', user['phone_number'] ?? '');
     await prefs.setString('locality', user['locality'] ?? '');
+
+    // ⚡ Ajout du restaurant_id si l'utilisateur est un restaurant
+    if (user['user_type'] == 'restaurant') {
+      await prefs.setInt('restaurant_id', user['restaurant_id'] ?? 0);
+    } else {
+      await prefs.setInt('restaurant_id', 0);
+    }
+
+    print("UserType: ${user['user_type']}, RestaurantId: ${prefs.getInt('restaurant_id')}");
   }
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
+    print("SnackBar erreur: $message");
   }
 
   Route _createRoute(String userType) {
     return PageRouteBuilder(
-      pageBuilder: (_, __, ___) => HomeScreen(orderId: widget.orderId ?? 0),
+      pageBuilder: (_, __, ___) =>
+          CustomBottomNavBar(userRole: userType, orderId: widget.orderId ?? 0),
       transitionsBuilder: (_, animation, __, child) {
         final tween = Tween(
           begin: const Offset(1, 0),
@@ -128,7 +147,6 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // ---------------- LOGO ----------------
               Icon(
                 Icons.delivery_dining,
                 size: 20.w,
@@ -144,8 +162,6 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
               SizedBox(height: 4.h),
-
-              // ---------------- FORM ----------------
               Form(
                 key: _formKey,
                 child: Column(
@@ -157,8 +173,6 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
               SizedBox(height: 3.h),
-
-              // ---------------- LOGIN BUTTON ----------------
               SizedBox(
                 width: double.infinity,
                 height: 6.h,
@@ -182,20 +196,16 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
               SizedBox(height: 2.h),
-
-              // ---------------- FORGOT / REGISTER ----------------
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ForgetPasswordPage(),
-                        ),
-                      );
-                    },
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ForgetPasswordPage(),
+                      ),
+                    ),
                     child: Text(
                       'Mot de passe oublié ?',
                       style: TextStyle(
@@ -205,12 +215,10 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                   TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const RegisterPage()),
-                      );
-                    },
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const RegisterPage()),
+                    ),
                     child: Text(
                       'S\'inscrire',
                       style: TextStyle(
@@ -235,7 +243,7 @@ class _LoginPageState extends State<LoginPage> {
   ) {
     return TextFormField(
       controller: controller,
-      obscureText: obscure && controller == pinController,
+      obscureText: obscure && controller == pinController ? obscurePin : false,
       maxLength: obscure ? 4 : null,
       decoration: InputDecoration(
         labelText: label,

@@ -1,13 +1,12 @@
-// ========================== HOME LIVREUR ==========================
 import 'dart:async';
+import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/livreur/screens/course_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:sizer/sizer.dart';
 import 'package:gap/gap.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
+
 
 class HomeLivreur extends StatefulWidget {
   final CourseModel? course;
@@ -33,12 +32,10 @@ class _HomeLivreurState extends State<HomeLivreur> {
       restaurantPos = widget.course!.restaurantPos;
       clientPos = widget.course!.customerPos;
       orderId = widget.course!.id;
-      print("Course reçue : orderId = $orderId");
     } else {
       restaurantPos = LatLng(5.3292, -4.0082);
       clientPos = LatLng(5.3290, -4.0080);
       orderId = 0;
-      print("Aucune course reçue, orderId = 0");
     }
 
     livreurPos = LatLng(
@@ -56,12 +53,11 @@ class _HomeLivreurState extends State<HomeLivreur> {
   }
 
   void moveLivreur() {
-    if (orderId == 0) return; // ne bouge pas si pas de course
+    if (orderId == 0) return;
     setState(() {
       livreurPos = LatLng(
         livreurPos.latitude + (clientPos.latitude - livreurPos.latitude) * 0.12,
-        livreurPos.longitude +
-            (clientPos.longitude - livreurPos.longitude) * 0.12,
+        livreurPos.longitude + (clientPos.longitude - livreurPos.longitude) * 0.12,
       );
     });
   }
@@ -72,72 +68,43 @@ class _HomeLivreurState extends State<HomeLivreur> {
   }
 
   Future<void> markAsDelivered() async {
-    print("Bouton 'Marquer comme Livré' pressé");
-
     if (orderId <= 0) {
-      print("OrderId invalide : $orderId");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Commande invalide")));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Commande invalide")),
+      );
       return;
     }
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token') ?? '';
-      print("Token : $token");
-
-      final url = Uri.parse(
-        'https://deligood-backend.onrender.com//api/orders/orders/livreur/$orderId/deliver/',
+      await LivreurApi.markOrderAsDelivered(orderId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Commande livrée avec succès !')),
       );
-      final response = await http.post(
-        url,
-        headers: {
-          'Authorization': 'Token $token',
-          'Content-Type': 'application/json',
-        },
-      );
-
-      print("StatusCode : ${response.statusCode}");
-
-      if (response.statusCode == 200) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Commande livrée avec succès !')),
-        );
-      } else if (response.statusCode == 404) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Commande introuvable')));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur serveur: ${response.statusCode}')),
-        );
-      }
     } catch (e) {
-      print("Erreur réseau : $e");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Erreur réseau: $e')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     if (orderId == 0) {
-      return Center(
-        child: Text(
-          "Aucune course sélectionnée",
-          style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+      return Scaffold(
+        backgroundColor: Colors.grey.shade50,
+        body: Center(
+          child: Text(
+            "Aucune course sélectionnée",
+            style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+          ),
         ),
       );
     }
 
     final livreurDistanceToClient = calculateDistance(livreurPos, clientPos);
-    final livreurDistanceToRestaurant = calculateDistance(
-      livreurPos,
-      restaurantPos,
-    );
+    final livreurDistanceToRestaurant = calculateDistance(livreurPos, restaurantPos);
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -158,11 +125,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Icon(
-                  Icons.delivery_dining,
-                  color: Colors.white,
-                  size: 32,
-                ),
+                const Icon(Icons.delivery_dining, color: Colors.white, size: 32),
                 Text(
                   "Suivi Livreur",
                   style: TextStyle(
@@ -176,7 +139,6 @@ class _HomeLivreurState extends State<HomeLivreur> {
             ),
           ),
           Gap(2.h),
-          // Carte & Timeline
           Expanded(
             child: Column(
               children: [
@@ -189,18 +151,13 @@ class _HomeLivreurState extends State<HomeLivreur> {
                     ),
                     children: [
                       TileLayer(
-                        urlTemplate:
-                            "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                        urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                         userAgentPackageName: 'com.example.deligood',
                       ),
                       MarkerLayer(
                         markers: [
                           _customMarker(clientPos, "Client", Colors.blue),
-                          _customMarker(
-                            restaurantPos,
-                            "Restaurant",
-                            Colors.orange,
-                          ),
+                          _customMarker(restaurantPos, "Restaurant", Colors.orange),
                           _customMarker(livreurPos, "Livreur", Colors.red),
                         ],
                       ),
@@ -237,16 +194,14 @@ class _HomeLivreurState extends State<HomeLivreur> {
                     children: [
                       _InfoCard(
                         title: "Distance livreur → restaurant",
-                        value:
-                            "${livreurDistanceToRestaurant.toStringAsFixed(0)} m",
+                        value: "${livreurDistanceToRestaurant.toStringAsFixed(0)} m",
                         color: Colors.orange,
                         icon: Icons.store,
                       ),
                       Gap(1.h),
                       _InfoCard(
                         title: "Distance livreur → client",
-                        value:
-                            "${livreurDistanceToClient.toStringAsFixed(0)} m",
+                        value: "${livreurDistanceToClient.toStringAsFixed(0)} m",
                         color: Colors.blue,
                         icon: Icons.person,
                       ),
@@ -309,9 +264,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(8),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 4),
-              ],
+              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
             ),
             child: Text(
               label,
@@ -369,16 +322,15 @@ class _HomeLivreurState extends State<HomeLivreur> {
   }
 
   Widget _stepIndicator(String label, Color color) => Column(
-    children: [
-      CircleAvatar(radius: 12, backgroundColor: color),
-      Gap(1.h / 2),
-      Text(
-        label,
-        style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold),
-      ),
-    ],
-  );
+        children: [
+          CircleAvatar(radius: 12, backgroundColor: color),
+          Gap(1.h / 2),
+          Text(
+            label,
+            style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold),
+          ),
+        ],
+      );
 
-  Widget _lineBetween() =>
-      Container(width: 5.w, height: 3, color: Colors.grey.shade300);
+  Widget _lineBetween() => Container(width: 5.w, height: 3, color: Colors.grey.shade300);
 }

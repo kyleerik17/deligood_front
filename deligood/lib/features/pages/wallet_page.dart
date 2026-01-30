@@ -1,9 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
-import 'package:intl/intl.dart'; // <-- pour formater la date
+import 'package:intl/intl.dart';
+import 'package:deligood/core/network/api.dart';
 
 class WalletPage extends StatefulWidget {
   const WalletPage({Key? key}) : super(key: key);
@@ -16,59 +15,40 @@ class _WalletPageState extends State<WalletPage> {
   double balance = 0.0;
   List transactions = [];
   bool isLoading = true;
-  String? accessToken;
 
   @override
   void initState() {
     super.initState();
-    _loadTokenAndFetchWallet();
+    fetchWallet();
   }
 
-  Future<void> _loadTokenAndFetchWallet() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    accessToken = prefs.getString('access_token');
-    await fetchWallet();
-  }
-
+  // ================= FETCH WALLET =================
   Future<void> fetchWallet() async {
-    if (accessToken == null) {
-      setState(() => isLoading = false);
-      return;
-    }
+    setState(() => isLoading = true);
 
-    final url = Uri.parse('https://deligood-backend.onrender.com//api/wallet/');
     try {
-      final response = await http.get(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
+      final data = await Api.get('/api/wallet/'); // token ajouté automatiquement par Api.get()
+      if (data != null) {
         setState(() {
           balance = double.tryParse(data['balance'].toString()) ?? 0.0;
-          transactions = data['transactions'];
-          isLoading = false;
+          transactions = data['transactions'] ?? [];
         });
-      } else {
-        setState(() => isLoading = false);
-        _showError('Erreur: ${response.statusCode}');
       }
     } catch (e) {
+      _showError('Erreur lors du chargement: $e');
+    } finally {
       setState(() => isLoading = false);
-      _showError('Erreur: $e');
     }
   }
 
+  // ================= ERROR SNACKBAR =================
   void _showError(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
+  // ================= FORMAT DATE =================
   String formatDate(String date) {
     try {
       return DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(date));
@@ -122,7 +102,6 @@ class _WalletPageState extends State<WalletPage> {
                         );
                       },
                     ),
-
                     SizedBox(height: 4.h),
 
                     // ================= ACTIONS / CONTACTS =================
@@ -131,15 +110,8 @@ class _WalletPageState extends State<WalletPage> {
                       child: Row(
                         children: [
                           SizedBox(width: 1.w),
-                          ActionCircle(
-                            icon: Icons.send,
-                            label: 'Envoyer',
-                            selected: true,
-                          ),
-                          ActionCircle(
-                            icon: Icons.request_page,
-                            label: 'Demander',
-                          ),
+                          ActionCircle(icon: Icons.send, label: 'Envoyer', selected: true),
+                          ActionCircle(icon: Icons.request_page, label: 'Demander'),
                           ContactCircle(label: 'Jennie'),
                           ContactCircle(label: 'Sawn'),
                           ContactCircle(label: 'Mittali'),
@@ -147,7 +119,6 @@ class _WalletPageState extends State<WalletPage> {
                         ],
                       ),
                     ),
-
                     SizedBox(height: 4.h),
 
                     Text(
@@ -203,11 +174,7 @@ class CardWallet extends StatelessWidget {
   final double balance;
   final VoidCallback onWithdraw;
 
-  const CardWallet({
-    super.key,
-    required this.balance,
-    required this.onWithdraw,
-  });
+  const CardWallet({super.key, required this.balance, required this.onWithdraw});
 
   @override
   Widget build(BuildContext context) {
@@ -287,12 +254,7 @@ class ActionCircle extends StatelessWidget {
   final String label;
   final bool selected;
 
-  const ActionCircle({
-    super.key,
-    required this.icon,
-    required this.label,
-    this.selected = false,
-  });
+  const ActionCircle({super.key, required this.icon, required this.label, this.selected = false});
 
   @override
   Widget build(BuildContext context) {
@@ -305,9 +267,7 @@ class ActionCircle extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: selected
-                  ? LinearGradient(
-                      colors: [Colors.deepPurple, Colors.purpleAccent],
-                    )
+                  ? LinearGradient(colors: [Colors.deepPurple, Colors.purpleAccent])
                   : null,
               color: selected ? null : Colors.white,
               boxShadow: [
@@ -321,10 +281,7 @@ class ActionCircle extends StatelessWidget {
             child: Icon(icon, color: selected ? Colors.white : Colors.grey),
           ),
           SizedBox(height: 1.h),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins'),
-          ),
+          Text(label, style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins')),
         ],
       ),
     );
@@ -355,10 +312,7 @@ class ContactCircle extends StatelessWidget {
             ),
           ),
           SizedBox(height: 1.h),
-          Text(
-            label,
-            style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins'),
-          ),
+          Text(label, style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins')),
         ],
       ),
     );
@@ -372,18 +326,10 @@ class TransactionTile extends StatelessWidget {
   final String source;
   final String date;
 
-  const TransactionTile({
-    super.key,
-    required this.type,
-    required this.amount,
-    required this.source,
-    required this.date,
-  });
+  const TransactionTile({super.key, required this.type, required this.amount, required this.source, required this.date});
 
-  Color _getColor() =>
-      type == 'credit' ? Colors.green.shade400 : Colors.red.shade400;
-  IconData _getIcon() =>
-      type == 'credit' ? Icons.arrow_downward : Icons.arrow_upward;
+  Color _getColor() => type == 'credit' ? Colors.green.shade400 : Colors.red.shade400;
+  IconData _getIcon() => type == 'credit' ? Icons.arrow_downward : Icons.arrow_upward;
 
   @override
   Widget build(BuildContext context) {
@@ -410,27 +356,17 @@ class TransactionTile extends StatelessWidget {
               children: [
                 Text(
                   '$amount F CFA',
-                  style: TextStyle(
-                    fontSize: 12.sp,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'poppins',
-                  ),
+                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, fontFamily: 'poppins'),
                 ),
                 SizedBox(height: 0.5.h),
                 Text(
                   source,
-                  style: TextStyle(
-                    fontSize: 10.sp,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 10.sp, color: Colors.grey.shade600),
                 ),
               ],
             ),
           ),
-          Text(
-            date,
-            style: TextStyle(fontSize: 10.sp, color: Colors.grey.shade500),
-          ),
+          Text(date, style: TextStyle(fontSize: 10.sp, color: Colors.grey.shade500)),
         ],
       ),
     );

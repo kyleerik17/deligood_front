@@ -1,21 +1,16 @@
 import 'dart:typed_data';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:deligood/features/client/screens/Home_screen.dart';
 
 class CreateMenuPage extends StatefulWidget {
   final String userRole;
-  final int orderId;
+  final int? orderId;
 
-  const CreateMenuPage({
-    super.key,
-    required this.userRole,
-    required this.orderId,
-  });
+  const CreateMenuPage({super.key, required this.userRole, this.orderId});
 
   @override
   State<CreateMenuPage> createState() => _CreateMenuPageState();
@@ -23,160 +18,156 @@ class CreateMenuPage extends StatefulWidget {
 
 class _CreateMenuPageState extends State<CreateMenuPage> {
   final _formKey = GlobalKey<FormState>();
+
   final nameCtrl = TextEditingController();
   final descCtrl = TextEditingController();
   final priceCtrl = TextEditingController();
+
   int? categoryId;
   Uint8List? imageBytes;
   bool loading = false;
+  List<Map<String, dynamic>> categories = [];
 
   final picker = ImagePicker();
-
-  final categories = [
-    {'id': 1, 'name': 'Boisson'},
-    {'id': 2, 'name': 'Nourriture'},
-    {'id': 3, 'name': 'Dessert'},
-  ];
 
   @override
   void initState() {
     super.initState();
-    print("=== CreateMenuPage ouverte ===");
+    fetchCategories();
   }
 
+  @override
+  void dispose() {
+    nameCtrl.dispose();
+    descCtrl.dispose();
+    priceCtrl.dispose();
+    super.dispose();
+  }
+
+  // ---------------------- PICK IMAGE ----------------------
   Future<void> pickImage() async {
-    print("==> Ouvrir la galerie pour choisir une image");
     final img = await picker.pickImage(source: ImageSource.gallery);
     if (img != null) {
       final bytes = await img.readAsBytes();
       setState(() => imageBytes = bytes);
-      print(
-        "Image choisie: ${img.name}, taille: ${bytes.lengthInBytes} octets",
-      );
-    } else {
-      print("Aucune image choisie");
     }
   }
 
-  Future<Map<String, dynamic>> getUserData() async {
+  // ---------------------- FETCH CATEGORIES ----------------------
+  Future<void> fetchCategories() async {
+    final uri = Uri.parse('http://127.0.0.1:8000/api/menu/categories/');
+    try {
+      final response = await http.get(uri);
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          categories = data
+              .map((c) => {'id': c['id'] as int, 'name': c['name'] as String})
+              .toList();
+        });
+      } else {
+        print('Erreur récupération catégories: ${response.body}');
+      }
+    } catch (e) {
+      print('Erreur réseau categories: $e');
+    }
+  }
+
+  // ---------------------- GET USER DATA ----------------------
+  Future<Map<String, dynamic>> _getUserData() async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-    final userType = prefs.getString('user_type');
-    final restaurantId = prefs.getInt('restaurant_id');
-
-    print(
-      "🔍 getUserData -> token: $token, userType: $userType, restaurantId: $restaurantId",
-    );
-
-    if (token == null) {
-      print("❌ Token non trouvé dans SharedPreferences !");
-    }
-    if (userType == null) {
-      print("❌ userType non trouvé dans SharedPreferences !");
-    }
-    if (restaurantId == null) {
-      print("❌ restaurantId non trouvé dans SharedPreferences !");
-    }
-
     return {
-      'access_token': token,
-      'user_type': userType,
-      'restaurant_id': restaurantId,
+      'token': prefs.getString('access_token'),
+      'user_type': prefs.getString('user_type')?.toLowerCase(),
+      'restaurant_id': prefs.getInt('restaurant_id'),
     };
   }
 
+  // ---------------------- SUBMIT FORM ----------------------
   Future<void> submit() async {
-    print("==> Submit cliqué");
-
-    if (!_formKey.currentState!.validate() || categoryId == null) {
-      print("❌ Formulaire invalide ou catégorie non choisie");
-      return;
-    }
-
-    setState(() => loading = true);
-    print("Formulaire valide, envoi en cours...");
-
-    final userData = await getUserData();
-    final token = userData['access_token'];
-    final restaurantId = userData['restaurant_id'];
-    final userType = userData['user_type'];
-
-    if (token == null) {
-      print("❌ Impossible d'envoyer: token null");
-      setState(() => loading = false);
-      return;
-    }
-    if (restaurantId == null) {
-      print(
-        "❌ Impossible d'envoyer: restaurantId null - il faut d'abord sauvegarder restaurantId !",
-      );
-      setState(() => loading = false);
-      return;
-    }
-    if (userType != 'restaurant') {
-      print("❌ Utilisateur non autorisé: userType=$userType");
-      setState(() => loading = false);
-      return;
-    }
-
-    final uri = Uri.parse(
-      'https://deligood-backend.onrender.com//api/menu/create/',
-    );
-    final request = http.MultipartRequest('POST', uri);
-    request.headers['Authorization'] = 'Token $token';
-    request.fields['name'] = nameCtrl.text;
-    request.fields['description'] = descCtrl.text;
-    request.fields['price'] = priceCtrl.text;
-    request.fields['category'] = categoryId.toString();
-    request.fields['restaurant'] = restaurantId.toString();
-
-    if (imageBytes != null) {
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'image',
-          imageBytes!,
-          filename: 'plat.png',
-        ),
-      );
-      print("📷 Image ajoutée: ${imageBytes!.lengthInBytes} octets");
-    }
-
-    try {
-      print("📡 Envoi de la requête au backend...");
-      final response = await request.send();
-      final respStr = await response.stream.bytesToString();
-      setState(() => loading = false);
-
-      print("Status code: ${response.statusCode}");
-      print("Réponse serveur: $respStr");
-
-      if (response.statusCode == 201) {
-        print("✅ Plat créé avec succès !");
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Plat créé avec succès')));
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => HomeScreen(orderId: widget.orderId),
-          ),
-        );
-      } else {
-        print("❌ Erreur serveur: $respStr");
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Erreur: $respStr')));
-      }
-    } catch (e) {
-      setState(() => loading = false);
-      print("❌ Exception lors de l'envoi: $e");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Erreur réseau')));
-    }
+  if (!_formKey.currentState!.validate() || categoryId == null) {
+    print("⚠️ Formulaire incomplet !");
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text("Formulaire incomplet")));
+    return;
   }
 
+  setState(() => loading = true);
+
+  final userData = await _getUserData();
+  final token = userData['token'];
+  final userType = userData['user_type'];
+  final restaurantId = userData['restaurant_id'];
+
+  print("🔹 Token: $token");
+  print("🔹 UserType: $userType");
+  print("🔹 RestaurantId: $restaurantId");
+
+  if (token == null || userType != 'restaurant' || restaurantId == null) {
+    setState(() => loading = false);
+    String msg = token == null
+        ? "Token manquant. Connectez-vous à nouveau."
+        : (userType != 'restaurant'
+            ? "Accès refusé pour ce compte."
+            : "Restaurant non associé au compte.");
+    print("⚠️ $msg");
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    return;
+  }
+
+  print("🔹 Nom: ${nameCtrl.text}");
+  print("🔹 Description: ${descCtrl.text}");
+  print("🔹 Prix: ${priceCtrl.text}");
+  print("🔹 Catégorie: $categoryId");
+  print("🔹 Image sélectionnée: ${imageBytes != null ? 'Oui' : 'Non'}");
+
+  final uri = Uri.parse('http://127.0.0.1:8000/api/menu/create/');
+  final request = http.MultipartRequest('POST', uri)
+    ..headers['Authorization'] = 'Token $token'
+    ..fields['name'] = nameCtrl.text.trim()
+    ..fields['description'] = descCtrl.text.trim()
+    ..fields['price'] = priceCtrl.text.trim()
+    ..fields['category'] = categoryId.toString()
+    ..fields['restaurant'] = restaurantId.toString();
+
+  if (imageBytes != null) {
+    print("🔹 Ajout de l'image au request");
+    request.files.add(http.MultipartFile.fromBytes(
+      'image',
+      imageBytes!,
+      filename: 'plat.png',
+    ));
+  }
+
+  try {
+    final response = await request.send();
+    final body = await response.stream.bytesToString();
+    setState(() => loading = false);
+
+    print("🔹 Status code: ${response.statusCode}");
+    print("🔹 Response body: $body");
+
+    if (response.statusCode == 201) {
+      if (!mounted) return;
+      print("✅ Plat créé avec succès !");
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text("Plat créé avec succès")));
+      Navigator.pop(context);
+    } else {
+      print("❌ Erreur serveur !");
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text("Erreur serveur : $body")));
+    }
+  } catch (e) {
+    setState(() => loading = false);
+    print("❌ Erreur réseau: $e");
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text("Erreur réseau : $e")));
+  }
+}
+
+
+  // ---------------------- BUILD ----------------------
   @override
   Widget build(BuildContext context) {
     final inputDecoration = InputDecoration(
@@ -197,10 +188,9 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
       appBar: AppBar(
         title: Text(
           'Créer un plat',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 20),
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.deepOrange,
-        elevation: 4,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -223,65 +213,35 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
               children: [
                 TextFormField(
                   controller: nameCtrl,
-                  style: GoogleFonts.poppins(),
-                  decoration: inputDecoration.copyWith(
-                    labelText: 'Nom',
-                    prefixIcon: const Icon(
-                      Icons.fastfood,
-                      color: Colors.deepOrange,
-                    ),
-                  ),
+                  decoration: inputDecoration.copyWith(labelText: 'Nom'),
                   validator: (v) => v!.isEmpty ? 'Champ requis' : null,
-                  onChanged: (val) => print("Nom modifié: $val"),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: descCtrl,
                   maxLines: 3,
-                  style: GoogleFonts.poppins(),
-                  decoration: inputDecoration.copyWith(
-                    labelText: 'Description',
-                    prefixIcon: const Icon(
-                      Icons.description,
-                      color: Colors.deepOrange,
-                    ),
-                  ),
-                  onChanged: (val) => print("Description modifiée: $val"),
+                  decoration: inputDecoration.copyWith(labelText: 'Description'),
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: priceCtrl,
                   keyboardType: TextInputType.number,
-                  style: GoogleFonts.poppins(),
-                  decoration: inputDecoration.copyWith(
-                    labelText: 'Prix',
-                    prefixIcon: const Icon(
-                      Icons.price_check,
-                      color: Colors.deepOrange,
-                    ),
-                  ),
+                  decoration: inputDecoration.copyWith(labelText: 'Prix'),
                   validator: (v) => v!.isEmpty ? 'Champ requis' : null,
-                  onChanged: (val) => print("Prix modifié: $val"),
                 ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<int>(
                   value: categoryId,
+                  decoration: inputDecoration.copyWith(labelText: 'Catégorie'),
                   items: categories
                       .map(
                         (c) => DropdownMenuItem<int>(
-                          value: c['id'] as int,
-                          child: Text(
-                            c['name'] as String,
-                            style: GoogleFonts.poppins(),
-                          ),
+                          value: c['id'],
+                          child: Text(c['name']!),
                         ),
                       )
                       .toList(),
-                  decoration: inputDecoration.copyWith(labelText: 'Catégorie'),
-                  onChanged: (v) {
-                    setState(() => categoryId = v);
-                    print("Catégorie sélectionnée: $v");
-                  },
+                  onChanged: (v) => setState(() => categoryId = v),
                   validator: (v) => v == null ? 'Choisir une catégorie' : null,
                 ),
                 const SizedBox(height: 20),
@@ -294,24 +254,9 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.deepOrange),
                       color: Colors.orange[50],
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black12,
-                          blurRadius: 6,
-                          offset: Offset(0, 3),
-                        ),
-                      ],
                     ),
                     child: imageBytes == null
-                        ? Center(
-                            child: Text(
-                              'Choisir une image',
-                              style: GoogleFonts.poppins(
-                                color: Colors.deepOrange,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          )
+                        ? const Center(child: Text('Choisir une image'))
                         : ClipRRect(
                             borderRadius: BorderRadius.circular(16),
                             child: Image.memory(imageBytes!, fit: BoxFit.cover),
@@ -329,14 +274,12 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      shadowColor: Colors.deepOrangeAccent,
-                      elevation: 6,
                     ),
                     child: loading
                         ? const CircularProgressIndicator(color: Colors.white)
-                        : Text(
+                        : const Text(
                             'Créer',
-                            style: GoogleFonts.poppins(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),

@@ -70,8 +70,7 @@ class _CoursePageState extends State<CoursePage> {
 
   Future<List<CourseModel>> fetchCourses() async {
     final token = await getToken();
-    final url =
-        'https://deligood-backend.onrender.com//api/orders/orders/livreur/available/';
+    final url = 'http://127.0.0.1:8000/api/orders/orders/livreur/available/';
     final res = await http.get(
       Uri.parse(url),
       headers: {'Authorization': 'Token $token'},
@@ -87,7 +86,7 @@ class _CoursePageState extends State<CoursePage> {
   Future<void> takeCourse(CourseModel course) async {
     final token = await getToken();
     final url =
-        'https://deligood-backend.onrender.com//api/orders/orders/livreur/${course.id}/pickup/';
+        'http://127.0.0.1:8000/api/orders/orders/livreur/${course.id}/pickup/';
     final res = await http.post(
       Uri.parse(url),
       headers: {'Authorization': 'Token $token'},

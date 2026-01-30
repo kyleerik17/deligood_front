@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-
-import 'package:deligood/core/api.dart';
+import 'package:deligood/core/network/api.dart';
 import 'package:deligood/widgets/CustomAppBar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -46,7 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (widget.orderId == null) return;
     try {
       final url = Uri.parse(
-        '${ApiConfig.baseUrl}/api/orders/${widget.orderId}/positions/',
+        '${Api.baseUrl}/api/orders/${widget.orderId}/positions/',
       );
       final response = await http.get(url);
       if (response.statusCode == 200) {

@@ -1,7 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:deligood/core/api.dart';
-import 'package:deligood/widgets/CustomAppBar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -10,7 +8,8 @@ import 'package:gap/gap.dart';
 import 'package:http/http.dart' as http;
 
 class HomeRestaurant extends StatefulWidget {
-  final int orderId;
+  final int orderId; // ID de la commande à suivre
+
   const HomeRestaurant({super.key, required this.orderId});
 
   @override
@@ -18,18 +17,20 @@ class HomeRestaurant extends StatefulWidget {
 }
 
 class _HomeRestaurantState extends State<HomeRestaurant> {
-  // Positions autour du Plateau à Abidjan, 30m entre elles
-  LatLng clientPos = LatLng(5.3290, -4.0080);
-  LatLng restaurantPos = LatLng(5.3292, -4.0082);
-  LatLng deliveryPos = LatLng(5.3288, -4.0082);
+  LatLng clientPos = const LatLng(5.3290, -4.0080);
+  LatLng restaurantPos = const LatLng(5.3292, -4.0082);
+  LatLng deliveryPos = const LatLng(5.3288, -4.0082);
 
   Timer? timer;
+  bool isDelivering = false;
 
   @override
   void initState() {
     super.initState();
-    fetchPositions();
-    timer = Timer.periodic(const Duration(seconds: 5), (_) => fetchPositions());
+    if (widget.orderId > 0) {
+      fetchPositions(); // première récupération
+      timer = Timer.periodic(const Duration(seconds: 5), (_) => fetchPositions());
+    }
   }
 
   @override
@@ -38,33 +39,99 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
     super.dispose();
   }
 
+  /// ================== FETCH POSITIONS ==================
   Future<void> fetchPositions() async {
+    if (widget.orderId <= 0) return;
+
     try {
-      final url = Uri.parse(
-        '${ApiConfig.baseUrl}/api/orders/${widget.orderId}/positions/',
-      );
+      final url = Uri.parse('http://127.0.0.1:8000/api/orders/${widget.orderId}/positions/');
+      debugPrint("🌐 Fetch positions: $url");
+
       final response = await http.get(url);
+
+      debugPrint("📡 Status code fetchPositions: ${response.statusCode}");
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         if (!mounted) return;
+
         setState(() {
           restaurantPos = LatLng(data['restaurant']['lat'], data['restaurant']['lng']);
           clientPos = LatLng(data['client']['lat'], data['client']['lng']);
           deliveryPos = LatLng(data['livreur']['lat'], data['livreur']['lng']);
         });
+      } else {
+        debugPrint('Erreur fetchPositions: ${response.statusCode}');
       }
     } catch (e) {
       debugPrint('Erreur fetchPositions: $e');
     }
   }
 
+  /// ================== MARK AS DELIVERED ==================
+  Future<void> markAsDelivered() async {
+    if (isDelivering || widget.orderId <= 0) return;
+
+    setState(() => isDelivering = true);
+    debugPrint("📦 Bouton 'Marquer livré' pressé pour orderId: ${widget.orderId}");
+
+    try {
+      final url = Uri.parse('http://127.0.0.1:8000/api/orders/orders/livreur/${widget.orderId}/deliver/');
+      debugPrint("🌐 Appel API POST vers: $url");
+
+      final response = await http.post(url);
+
+      debugPrint("📡 Status code: ${response.statusCode}");
+      debugPrint("📄 Body: ${response.body}");
+
+      if (response.statusCode == 200) {
+        timer?.cancel();
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("✅ Commande livrée avec succès"),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        throw Exception("Erreur ${response.statusCode}");
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Livraison échouée : $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isDelivering = false);
+    }
+  }
+
+  /// ================== DISTANCE ==================
   double calculateDistance(LatLng start, LatLng end) {
     final Distance distance = Distance();
     return distance.as(LengthUnit.Meter, start, end);
   }
 
+  /// ================== BUILD ==================
   @override
   Widget build(BuildContext context) {
+    if (widget.orderId <= 0) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text("Suivi Livraison"),
+          backgroundColor: Colors.deepOrange,
+        ),
+        body: const Center(
+          child: Text(
+            "🚫 Aucune commande sélectionnée",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+        ),
+      );
+    }
+
     final livreurDistanceToClient = calculateDistance(deliveryPos, clientPos);
     final livreurDistanceToRestaurant = calculateDistance(deliveryPos, restaurantPos);
 
@@ -72,47 +139,40 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
       backgroundColor: Colors.grey.shade50,
       body: Column(
         children: [
-         
-         
+          // Header
           Container(
             width: double.infinity,
             padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFFFFB74D), Color(0xFFFF9800)],
+                colors: [Color(0xFFFFA726), Color(0xFFFF7043)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(35)),
+              boxShadow: [
+                BoxShadow(color: Colors.black26, blurRadius: 6, offset: Offset(0, 3)),
+              ],
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Icon(Icons.restaurant_menu, color: Colors.white, size: 32),
+              children: const [
+                Icon(Icons.restaurant_menu, color: Colors.white, size: 32),
                 Text(
                   "Suivi Livraison",
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 19.sp,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5),
+                  style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
                 ),
-                const Icon(Icons.more_vert, color: Colors.white, size: 32),
+                Icon(Icons.more_vert, color: Colors.white),
               ],
             ),
           ),
 
           Gap(2.h),
 
-          // Carte réduite + immersive
-          SizedBox(
-            height: 35.h,
+          // Map
+          Expanded(
             child: FlutterMap(
-              options: MapOptions(
-                initialCenter: deliveryPos,
-                initialZoom: 18,
-                maxZoom: 20,
-              ),
+              options: MapOptions(initialCenter: deliveryPos, initialZoom: 17),
               children: [
                 TileLayer(
                   urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -131,7 +191,6 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
                       points: [restaurantPos, deliveryPos, clientPos],
                       color: Colors.deepOrangeAccent,
                       strokeWidth: 4,
-                      
                     ),
                   ],
                 ),
@@ -141,9 +200,9 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
 
           Gap(2.h),
 
-          // Timeline style design UI
+          // Step Indicator
           SizedBox(
-            height: 8.h,
+            height: 10.h,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
@@ -158,89 +217,102 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
 
           Gap(2.h),
 
-          // Info Cards flottantes avec effet glass
+          // Info distances
           Padding(
             padding: EdgeInsets.symmetric(horizontal: 4.w),
             child: Column(
               children: [
-                _InfoCard(
-                  title: "Distance livreur → restaurant",
-                  value: "${livreurDistanceToRestaurant.toStringAsFixed(0)} m",
-                  color: Colors.orange,
-                  icon: Icons.store,
+                _infoCard(
+                  "Livreur → Restaurant",
+                  "${livreurDistanceToRestaurant.toStringAsFixed(0)} m",
+                  Icons.store,
+                  Colors.orange,
                 ),
                 Gap(1.h),
-                _InfoCard(
-                  title: "Distance livreur → client",
-                  value: "${livreurDistanceToClient.toStringAsFixed(0)} m",
-                  color: Colors.blue,
-                  icon: Icons.person,
+                _infoCard(
+                  "Livreur → Client",
+                  "${livreurDistanceToClient.toStringAsFixed(0)} m",
+                  Icons.person,
+                  Colors.blue,
                 ),
               ],
             ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // Recentre sur le livreur
-        },
-        backgroundColor: Colors.deepOrange,
-        child: const Icon(Icons.my_location),
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton(
+            heroTag: "loc",
+            backgroundColor: Colors.deepOrange,
+            child: const Icon(Icons.my_location),
+            onPressed: () {},
+          ),
+          Gap(1.h),
+          FloatingActionButton.extended(
+            heroTag: "deliver",
+            backgroundColor: Colors.green,
+            icon: isDelivering
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.check_circle),
+            label: Text(
+              isDelivering ? "Traitement..." : "Marquer livré",
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            onPressed: isDelivering ? null : markAsDelivered,
+          ),
+        ],
       ),
     );
   }
 
+  /// ================== WIDGETS ==================
   Marker _customMarker(LatLng pos, String label, Color color) {
     return Marker(
       point: pos,
-      width: 60,
-      height: 60,
-      child:  Column(
+      width: 70,
+      height: 70,
+      child: Column(
         children: [
-          Icon(Icons.location_on, color: color, size: 38),
+          Icon(Icons.location_on, color: color, size: 40),
           Container(
-            margin: const EdgeInsets.only(top: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
             decoration: BoxDecoration(
               color: color,
-              borderRadius: BorderRadius.circular(8),
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+              ],
             ),
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
-            ),
+            child: Text(label,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
           ),
         ],
       ),
     );
   }
 
-  Widget _InfoCard({required String title, required String value, required Color color, required IconData icon}) {
+  Widget _infoCard(String title, String value, IconData icon, Color color) {
     return Container(
-      padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
+      padding: EdgeInsets.all(3.w),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 4)),
-        ],
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 8)],
       ),
       child: Row(
         children: [
-          Container(
-            padding: EdgeInsets.all(2.w),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: color, size: 28),
+          CircleAvatar(
+            backgroundColor: color.withOpacity(0.15),
+            child: Icon(icon, color: color),
           ),
           Gap(4.w),
-          Expanded(
-            child: Text(title, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500)),
-          ),
+          Expanded(child: Text(title, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500))),
           Text(value, style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold)),
         ],
       ),
@@ -251,13 +323,11 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
     return Column(
       children: [
         CircleAvatar(radius: 12, backgroundColor: color),
-        Gap(1.h / 2),
+        Gap(0.5.h),
         Text(label, style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold)),
       ],
     );
   }
 
-  Widget _lineBetween() {
-    return Container(width: 5.w, height: 3, color: Colors.grey.shade300);
-  }
+  Widget _lineBetween() => Container(width: 5.w, height: 3, color: Colors.grey.shade300);
 }

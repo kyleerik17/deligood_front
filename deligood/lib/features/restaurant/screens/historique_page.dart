@@ -82,7 +82,7 @@ class HistoriquePage extends StatefulWidget {
 
 class _HistoriquePageState extends State<HistoriquePage> {
   late Future<List<HistoriqueItem>> _historiqueFuture;
-  static const String baseUrl = "https://deligood-backend.onrender.com/";
+  static const String baseUrl = "http://127.0.0.1:8000";
 
   @override
   void initState() {

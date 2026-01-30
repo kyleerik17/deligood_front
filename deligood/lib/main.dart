@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 // Pages
 import 'package:deligood/features/auth/screens/login/login_page.dart';
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
-import 'package:deligood/features/client/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,7 +30,7 @@ class MyApp extends StatelessWidget {
           debugShowCheckedModeBanner: false,
           title: 'DéliGood',
           theme: ThemeData(primarySwatch: Colors.blue),
-          home: SplashScreen(orderId: orderId),
+          home: AuthWrapper(orderId: orderId),
         );
       },
     );
@@ -56,39 +55,53 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _checkLogin();
   }
 
+  // Vérifie si l'utilisateur est déjà connecté
   Future<void> _checkLogin() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
     final type = prefs.getString('user_type');
 
+    // Petite pause pour le splash/chargement
     await Future.delayed(const Duration(milliseconds: 300));
 
     setState(() {
-      userRole = type;
+      // Si token et type existent, l'utilisateur est connecté
+      if (token != null && type != null) {
+        userRole = type.toLowerCase();
+      }
       isLoading = false;
+    });
+  }
+
+  // Callback après login réussi
+  void _onLoginSuccess(String type) async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedToken = prefs.getString('access_token'); // déjà stocké par LoginPage
+
+    setState(() {
+      userRole = type.toLowerCase();
     });
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
     }
 
     if (userRole != null) {
-      // Passe orderId à CustomBottomNavBar
+      // Utilisateur connecté → affiche la barre de navigation
       return CustomBottomNavBar(
-        userRole: userRole!.toLowerCase(),
+        userRole: userRole!,
         orderId: widget.orderId,
       );
     } else {
+      // Non connecté → affiche la page de login
       return LoginPage(
-        orderId: widget.orderId, // ✅ Passe orderId à LoginPage
-        onLoginSuccess: (String type) {
-          setState(() {
-            userRole = type;
-          });
-        },
+        orderId: widget.orderId,
+        onLoginSuccess: _onLoginSuccess,
       );
     }
   }

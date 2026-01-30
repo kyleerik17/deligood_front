@@ -1,13 +1,16 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:deligood/features/pages/wallet_page.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'package:flutter/material.dart';
-import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sizer/sizer.dart';
 import 'package:gap/gap.dart';
-import 'package:deligood/features/auth/widgets/logout.dart';
+
+import 'package:deligood/core/network/api.dart';
+
+import 'package:deligood/features/pages/wallet_page.dart';
 import 'package:deligood/features/pages/info_perso.dart';
+import 'package:deligood/features/auth/widgets/logout.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -20,38 +23,63 @@ class _ProfilePageState extends State<ProfilePage> {
   String firstName = '';
   String lastName = '';
   String phoneNumber = '';
-  String initials = '?';
   String userType = '';
+  String initials = '?';
   Uint8List? avatarBytes;
 
   @override
   void initState() {
     super.initState();
-    _loadUserFromPrefs();
+    _loadUser();
+    _fetchProfileFromApi();
   }
 
-  Future<void> _loadUserFromPrefs() async {
+  // =====================
+  // LOAD USER LOCALE
+  // =====================
+  Future<void> _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
-    final fName = prefs.getString('first_name');
-    final lName = prefs.getString('last_name');
-    final phone = prefs.getString('phone_number');
-    final type = prefs.getString('user_type') ?? '';
     final avatarBase64 = prefs.getString('avatar_base64');
 
     setState(() {
-      firstName = fName ?? '';
-      lastName = lName ?? '';
-      phoneNumber = phone ?? '';
-      userType = type;
+      firstName = prefs.getString('first_name') ?? '';
+      lastName = prefs.getString('last_name') ?? '';
+      phoneNumber = prefs.getString('phone_number') ?? '';
+      userType = prefs.getString('user_type') ?? '';
       initials = _buildInitials(firstName, lastName);
-      if (avatarBase64 != null) avatarBytes = base64Decode(avatarBase64);
+      if (avatarBase64 != null) {
+        avatarBytes = base64Decode(avatarBase64);
+      }
     });
   }
 
-  String _buildInitials(String fName, String lName) {
-    if (fName.isNotEmpty && lName.isNotEmpty)
-      return '${fName[0]}${lName[0]}'.toUpperCase();
-    if (fName.isNotEmpty) return fName[0].toUpperCase();
+  // =====================
+  // FETCH PROFILE API
+  // =====================
+  Future<void> _fetchProfileFromApi() async {
+    try {
+      print("Fetching profile from API...");
+      final data = await ProfileApi.fetchProfile();
+      print("Profile data: $data");
+
+      setState(() {
+        firstName = data['first_name'] ?? '';
+        lastName = data['last_name'] ?? '';
+        phoneNumber = data['phone_number'] ?? '';
+        userType = data['user_type'] ?? '';
+        initials = _buildInitials(firstName, lastName);
+        if (data['avatar_base64'] != null) {
+          avatarBytes = ProfileApi.decodeAvatar(data['avatar_base64']);
+        }
+      });
+    } catch (e) {
+      print("Erreur fetch profile: $e");
+    }
+  }
+
+  String _buildInitials(String f, String l) {
+    if (f.isNotEmpty && l.isNotEmpty) return '${f[0]}${l[0]}'.toUpperCase();
+    if (f.isNotEmpty) return f[0].toUpperCase();
     return '?';
   }
 
@@ -74,20 +102,25 @@ class _ProfilePageState extends State<ProfilePage> {
                 ClipPath(
                   clipper: HeaderClipper(),
                   child: Container(
-                    height: 22.h,
-                    color: Colors.deepPurple.shade600,
+                    height: 23.h,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF5F2EEA), Color(0xFF7B61FF)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                    ),
                   ),
                 ),
                 Positioned(
                   left: 5.w,
                   top: 5.h,
                   child: Text(
-                    "Profil",
+                    'Profil',
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 22.sp,
                       fontWeight: FontWeight.bold,
-                      fontFamily: 'Poppins',
                       letterSpacing: 1.1,
                     ),
                   ),
@@ -101,7 +134,7 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 children: [
                   Material(
-                    elevation: 8,
+                    elevation: 10,
                     shape: const CircleBorder(),
                     child: CircleAvatar(
                       radius: 12.w,
@@ -113,7 +146,7 @@ class _ProfilePageState extends State<ProfilePage> {
                           ? Text(
                               initials,
                               style: TextStyle(
-                                fontSize: 20.sp,
+                                fontSize: 22.sp,
                                 fontWeight: FontWeight.bold,
                                 color: Colors.deepPurple,
                               ),
@@ -127,17 +160,14 @@ class _ProfilePageState extends State<ProfilePage> {
                     style: TextStyle(
                       fontSize: 18.sp,
                       fontWeight: FontWeight.w600,
-                      fontFamily: 'Roboto',
                     ),
                   ),
-                  Gap(0.5.h),
+                  Gap(0.4.h),
                   Text(
                     phoneNumber.isEmpty ? '—' : phoneNumber,
                     style: TextStyle(
                       fontSize: 15.sp,
-                      fontWeight: FontWeight.w400,
                       color: Colors.grey.shade700,
-                      fontFamily: 'Roboto',
                     ),
                   ),
                 ],
@@ -151,27 +181,30 @@ class _ProfilePageState extends State<ProfilePage> {
                 child: ListView(
                   children: [
                     Gap(2.h),
+
                     OptionCard(
                       icon: Icons.person,
-                      title: "Modifier profil",
-                      onTap: () {
-                        Navigator.push(
+                      title: 'Modifier profil',
+                      onTap: () async {
+                        await Navigator.push(
                           context,
-                          MaterialPageRoute(builder: (_) => InfoPersoPage()),
-                        ).then((_) => _loadUserFromPrefs());
+                          MaterialPageRoute(
+                            builder: (_) => const InfoPersoPage(),
+                          ),
+                        );
+                        await _fetchProfileFromApi(); // refresh après modif
                       },
                     ),
 
-                    // 🔹 Carte Solde seulement pour livreur/resto
                     if (showWallet)
                       OptionCard(
-                        icon: Icons.receipt_long,
-                        title: "Solde",
+                        icon: Icons.account_balance_wallet,
+                        title: 'Mon solde',
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => const WalletPage(),
+                              builder: (_) => const WalletPage(),
                             ),
                           );
                         },
@@ -182,19 +215,24 @@ class _ProfilePageState extends State<ProfilePage> {
                       title: "Conditions d'utilisation",
                       onTap: () {},
                     ),
+
                     OptionCard(
                       icon: Icons.privacy_tip,
-                      title: "Politique de confidentialité",
+                      title: 'Politique de confidentialité',
                       onTap: () {},
                     ),
+
                     OptionCard(
                       icon: Icons.support_agent,
-                      title: "Nous contacter",
+                      title: 'Nous contacter',
                       onTap: () {},
                     ),
+
                     OptionCard(
                       icon: Icons.logout,
-                      title: "Déconnexion",
+                      title: 'Déconnexion',
+                      color: Colors.red.shade600,
+                      iconColor: Colors.white,
                       onTap: () async {
                         final prefs = await SharedPreferences.getInstance();
                         final orderId = prefs.getInt('last_order_id');
@@ -203,9 +241,8 @@ class _ProfilePageState extends State<ProfilePage> {
                           orderId: orderId,
                         );
                       },
-                      color: Colors.red.shade600,
-                      iconColor: Colors.white,
                     ),
+
                     Gap(4.h),
                   ],
                 ),
@@ -240,14 +277,14 @@ class OptionCard extends StatefulWidget {
 }
 
 class _OptionCardState extends State<OptionCard> {
-  bool _isPressed = false;
+  bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => setState(() => _isPressed = true),
-      onTapUp: (_) => setState(() => _isPressed = false),
-      onTapCancel: () => setState(() => _isPressed = false),
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
       onTap: widget.onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
@@ -256,10 +293,10 @@ class _OptionCardState extends State<OptionCard> {
         decoration: BoxDecoration(
           color: widget.color ?? Colors.white,
           borderRadius: BorderRadius.circular(16),
-          boxShadow: _isPressed
+          boxShadow: _pressed
               ? []
               : [
-                  BoxShadow(
+                  const BoxShadow(
                     color: Colors.black12,
                     blurRadius: 6,
                     offset: Offset(0, 4),
@@ -276,15 +313,14 @@ class _OptionCardState extends State<OptionCard> {
                 style: TextStyle(
                   fontSize: 16.sp,
                   fontWeight: FontWeight.w500,
-                  fontFamily: 'Roboto',
                   color: widget.color != null ? Colors.white : Colors.black87,
                 ),
               ),
             ),
             Icon(
               Icons.arrow_forward_ios,
-              size: 18,
-              color: widget.color != null ? Colors.white : Colors.grey,
+              size: 16,
+              color: widget.color != null ? Colors.white : Colors.grey.shade400,
             ),
           ],
         ),
@@ -311,5 +347,5 @@ class HeaderClipper extends CustomClipper<Path> {
   }
 
   @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+  bool shouldReclip(CustomClipper<Path> oldClipper) => false;
 }
