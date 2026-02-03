@@ -122,9 +122,7 @@ class _CommandePageState extends State<CommandePage> {
                                   child: Image.network(
                                     item.imageUrl,
                                     fit: BoxFit.cover,
-                                    width: double.infinity,
-                                  ),
-                                ),
+                                                  ),                        ),
                               ),
                               Padding(
                                 padding: EdgeInsets.all(2.w),
@@ -194,3 +192,4 @@ class MenuItem {
     );
   }
 }
+

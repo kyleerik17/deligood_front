@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:sizer/sizer.dart';
 import 'package:intl/intl.dart';
 import 'package:deligood/core/network/api.dart';
@@ -15,6 +16,7 @@ class _WalletPageState extends State<WalletPage> {
   double balance = 0.0;
   List transactions = [];
   bool isLoading = true;
+  bool isWithdrawing = false;
 
   @override
   void initState() {
@@ -22,12 +24,11 @@ class _WalletPageState extends State<WalletPage> {
     fetchWallet();
   }
 
-  // ================= FETCH WALLET =================
   Future<void> fetchWallet() async {
     setState(() => isLoading = true);
 
     try {
-      final data = await Api.get('/api/wallet/'); // token ajouté automatiquement par Api.get()
+      final data = await Api.get('/api/wallet/');
       if (data != null) {
         setState(() {
           balance = double.tryParse(data['balance'].toString()) ?? 0.0;
@@ -35,338 +36,440 @@ class _WalletPageState extends State<WalletPage> {
         });
       }
     } catch (e) {
-      _showError('Erreur lors du chargement: $e');
+      _showError('Impossible de charger les données');
     } finally {
       setState(() => isLoading = false);
     }
   }
 
-  // ================= ERROR SNACKBAR =================
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Erreur'),
+        content: Text(message),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
     );
   }
 
-  // ================= FORMAT DATE =================
+  void _showWithdrawDialog() {
+    final controller = TextEditingController();
+    
+    showCupertinoDialog(
+      context: context,
+      builder: (context) => CupertinoAlertDialog(
+        title: const Text('Retrait'),
+        content: Padding(
+          padding: const EdgeInsets.only(top: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Solde disponible: ${balance.toStringAsFixed(0)} FCFA',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: CupertinoColors.secondaryLabel,
+                ),
+              ),
+              const SizedBox(height: 16),
+              CupertinoTextField(
+                controller: controller,
+                placeholder: 'Montant à retirer',
+                keyboardType: TextInputType.number,
+                prefix: const Padding(
+                  padding: EdgeInsets.only(left: 12),
+                  child: Text('FCFA'),
+                ),
+                style: const TextStyle(fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          CupertinoDialogAction(
+            child: const Text('Annuler'),
+            onPressed: () => Navigator.pop(context),
+          ),
+          CupertinoDialogAction(
+            isDefaultAction: true,
+            onPressed: () {
+              final amount = double.tryParse(controller.text);
+              if (amount != null && amount > 0 && amount <= balance) {
+                Navigator.pop(context);
+                _processWithdrawal(amount);
+              }
+            },
+            child: const Text('Confirmer'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _processWithdrawal(double amount) async {
+    setState(() => isWithdrawing = true);
+    
+    // Simuler l'appel API
+    await Future.delayed(const Duration(seconds: 2));
+    
+    setState(() => isWithdrawing = false);
+    
+    if (mounted) {
+      showCupertinoDialog(
+        context: context,
+        builder: (context) => CupertinoAlertDialog(
+          title: const Text('Succès'),
+          content: Text('Retrait de ${amount.toStringAsFixed(0)} FCFA en cours de traitement'),
+          actions: [
+            CupertinoDialogAction(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.pop(context);
+                fetchWallet();
+              },
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
   String formatDate(String date) {
     try {
-      return DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(date));
+      final dt = DateTime.parse(date);
+      final now = DateTime.now();
+      final diff = now.difference(dt);
+      
+      if (diff.inDays == 0) {
+        return "Aujourd'hui ${DateFormat('HH:mm').format(dt)}";
+      } else if (diff.inDays == 1) {
+        return "Hier ${DateFormat('HH:mm').format(dt)}";
+      } else if (diff.inDays < 7) {
+        return DateFormat('EEE HH:mm', 'fr').format(dt);
+      } else {
+        return DateFormat('dd/MM/yy').format(dt);
+      }
     } catch (_) {
       return date;
     }
   }
 
+  Color _getTransactionColor(String type) {
+    return type == 'credit' 
+        ? CupertinoColors.systemGreen 
+        : CupertinoColors.systemRed;
+  }
+
+  IconData _getTransactionIcon(String type) {
+    return type == 'credit' 
+        ? CupertinoIcons.arrow_down_circle_fill
+        : CupertinoIcons.arrow_up_circle_fill;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: Colors.deepPurpleAccent,
-        title: Text(
-          'Mon Wallet',
-          style: TextStyle(
-            fontSize: 20.sp,
-            fontWeight: FontWeight.bold,
-            fontFamily: 'poppins',
+    return CupertinoPageScaffold(
+      backgroundColor: CupertinoColors.systemGroupedBackground,
+      navigationBar: CupertinoNavigationBar(
+        backgroundColor: CupertinoColors.systemBackground.withOpacity(0.9),
+        border: const Border(
+          bottom: BorderSide(
+            color: CupertinoColors.separator,
+            width: 0.5,
           ),
         ),
-        centerTitle: true,
-        actions: [
-          Padding(
-            padding: EdgeInsets.only(right: 5.w),
-            child: CircleAvatar(
-              radius: 5.w,
-              backgroundImage: AssetImage('assets/images/n.png'),
-            ),
+        middle: const Text(
+          'Portefeuille',
+          style: TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 17,
           ),
-        ],
+        ),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: fetchWallet,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ================= CARD SOLDE =================
-                    CardWallet(
-                      balance: balance,
-                      onWithdraw: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Retrait lancé')),
-                        );
-                      },
+      child: SafeArea(
+        child: isLoading
+            ? const Center(child: CupertinoActivityIndicator(radius: 14))
+            : CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  CupertinoSliverRefreshControl(
+                    onRefresh: fetchWallet,
+                  ),
+                  SliverToBoxAdapter(
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 24),
+                        
+                        // Balance Card
+                        _buildBalanceCard(),
+                        
+                        const SizedBox(height: 32),
+                        
+                        // Transactions Section
+                        _buildTransactionsSection(),
+                      ],
                     ),
-                    SizedBox(height: 4.h),
-
-                    // ================= ACTIONS / CONTACTS =================
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          SizedBox(width: 1.w),
-                          ActionCircle(icon: Icons.send, label: 'Envoyer', selected: true),
-                          ActionCircle(icon: Icons.request_page, label: 'Demander'),
-                          ContactCircle(label: 'Jennie'),
-                          ContactCircle(label: 'Sawn'),
-                          ContactCircle(label: 'Mittali'),
-                          SizedBox(width: 1.w),
-                        ],
-                      ),
-                    ),
-                    SizedBox(height: 4.h),
-
-                    Text(
-                      'Transactions récentes',
-                      style: TextStyle(
-                        fontSize: 14.sp,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'poppins',
-                      ),
-                    ),
-                    SizedBox(height: 2.h),
-
-                    // ================= LISTE TRANSACTIONS =================
-                    transactions.isEmpty
-                        ? Center(
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(vertical: 5.h),
-                              child: Text(
-                                'Aucune transaction pour le moment',
-                                style: TextStyle(
-                                  fontSize: 15.sp,
-                                  fontFamily: 'poppins',
-                                  color: Colors.grey.shade600,
-                                ),
-                              ),
-                            ),
-                          )
-                        : ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: transactions.length,
-                            separatorBuilder: (_, __) => SizedBox(height: 2.h),
-                            itemBuilder: (context, index) {
-                              final tx = transactions[index];
-                              return TransactionTile(
-                                amount: tx['amount'],
-                                type: tx['transaction_type'],
-                                source: tx['source'] ?? '—',
-                                date: formatDate(tx['created_at']),
-                              );
-                            },
-                          ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ),
+      ),
     );
   }
-}
 
-// ================= CARD WALLET =================
-class CardWallet extends StatelessWidget {
-  final double balance;
-  final VoidCallback onWithdraw;
-
-  const CardWallet({super.key, required this.balance, required this.onWithdraw});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildBalanceCard() {
     return Container(
-      height: 22.h,
-      padding: EdgeInsets.all(4.w),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(3.w),
-        gradient: LinearGradient(
-          colors: [Colors.deepPurple, Colors.purpleAccent],
+        gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
+          colors: [
+            Color(0xFF1E3A8A), // Bleu marine profond
+            Color(0xFF3B82F6), // Bleu vif
+          ],
         ),
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.purple.withOpacity(0.3),
-            blurRadius: 12,
-            offset: Offset(0, 6),
+            color: const Color(0xFF3B82F6).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'ANGE ERIK KYLE',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 18.sp,
-              fontFamily: 'poppins',
-            ),
-          ),
-          Spacer(),
-          Text(
-            '\$${balance.toStringAsFixed(2)}',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 28.sp,
-              fontFamily: 'poppins',
-            ),
-          ),
-          SizedBox(height: 1.h),
-          SizedBox(
-            width: 35.w,
-            height: 5.h,
-            child: ElevatedButton(
-              onPressed: onWithdraw,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.orangeAccent,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(50),
-                ),
-                shadowColor: Colors.black26,
-                elevation: 5,
-              ),
-              child: Text(
-                'Retrait',
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Solde disponible',
                 style: TextStyle(
-                  fontFamily: 'poppins',
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12.sp,
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.3,
                 ),
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ================= ACTION CIRCLE =================
-class ActionCircle extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-
-  const ActionCircle({super.key, required this.icon, required this.label, this.selected = false});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 2.w),
-      child: Column(
-        children: [
-          Container(
-            padding: EdgeInsets.all(4.w),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: selected
-                  ? LinearGradient(colors: [Colors.deepPurple, Colors.purpleAccent])
-                  : null,
-              color: selected ? null : Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black12,
-                  blurRadius: 6,
-                  offset: Offset(0, 3),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
                 ),
-              ],
-            ),
-            child: Icon(icon, color: selected ? Colors.white : Colors.grey),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'FCFA',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
           ),
-          SizedBox(height: 1.h),
-          Text(label, style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins')),
+          const SizedBox(height: 16),
+          Text(
+            balance.toStringAsFixed(0),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 42,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1.5,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoButton(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              onPressed: isWithdrawing ? null : _showWithdrawDialog,
+              child: isWithdrawing
+                  ? const CupertinoActivityIndicator(
+                      color: Color(0xFF3B82F6),
+                    )
+                  : const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          CupertinoIcons.money_dollar_circle,
+                          color: Color(0xFF3B82F6),
+                          size: 20,
+                        ),
+                        SizedBox(width: 8),
+                        Text(
+                          'Effectuer un retrait',
+                          style: TextStyle(
+                            color: Color(0xFF3B82F6),
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
         ],
       ),
     );
   }
-}
 
-// ================= CONTACT CIRCLE =================
-class ContactCircle extends StatelessWidget {
-  final String label;
-
-  const ContactCircle({super.key, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildTransactionsSection() {
     return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 2.w),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 5.w,
-            backgroundColor: Colors.purple.shade50,
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 12),
             child: Text(
-              label[0],
+              'HISTORIQUE',
               style: TextStyle(
-                color: Colors.deepPurple,
-                fontWeight: FontWeight.bold,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.secondaryLabel,
+                letterSpacing: 0.5,
               ),
             ),
           ),
-          SizedBox(height: 1.h),
-          Text(label, style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins')),
+          
+          transactions.isEmpty
+              ? _buildEmptyTransactions()
+              : Column(
+                  children: transactions.map((tx) {
+                    return _buildTransactionItem(tx);
+                  }).toList(),
+                ),
+          
+          const SizedBox(height: 20),
         ],
       ),
     );
   }
-}
 
-// ================= TRANSACTION TILE =================
-class TransactionTile extends StatelessWidget {
-  final String type;
-  final dynamic amount;
-  final String source;
-  final String date;
-
-  const TransactionTile({super.key, required this.type, required this.amount, required this.source, required this.date});
-
-  Color _getColor() => type == 'credit' ? Colors.green.shade400 : Colors.red.shade400;
-  IconData _getIcon() => type == 'credit' ? Icons.arrow_downward : Icons.arrow_upward;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildEmptyTransactions() {
     return Container(
-      padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+      padding: const EdgeInsets.all(40),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(3.w),
-        boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4)),
-        ],
+        color: CupertinoColors.systemBackground,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(
+              CupertinoIcons.doc_text,
+              size: 56,
+              color: CupertinoColors.systemGrey.withOpacity(0.5),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Aucune transaction',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: CupertinoColors.label,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Vos transactions apparaîtront ici',
+              style: TextStyle(
+                fontSize: 14,
+                color: CupertinoColors.secondaryLabel,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTransactionItem(Map<String, dynamic> tx) {
+    final type = tx['transaction_type'] ?? 'debit';
+    final amount = tx['amount'];
+    final source = tx['source'] ?? 'Transaction';
+    final date = formatDate(tx['created_at'] ?? '');
+    final color = _getTransactionColor(type);
+    final icon = _getTransactionIcon(type);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: CupertinoColors.systemBackground,
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          CircleAvatar(
-            radius: 5.w,
-            backgroundColor: _getColor().withOpacity(0.15),
-            child: Icon(_getIcon(), color: _getColor(), size: 6.w),
+          // Icon
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: 24,
+            ),
           ),
-          SizedBox(width: 4.w),
+          const SizedBox(width: 14),
+          
+          // Details
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$amount F CFA',
-                  style: TextStyle(fontSize: 12.sp, fontWeight: FontWeight.w600, fontFamily: 'poppins'),
-                ),
-                SizedBox(height: 0.5.h),
-                Text(
                   source,
-                  style: TextStyle(fontSize: 10.sp, color: Colors.grey.shade600),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: CupertinoColors.label,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  date,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: CupertinoColors.secondaryLabel,
+                  ),
                 ),
               ],
             ),
           ),
-          Text(date, style: TextStyle(fontSize: 10.sp, color: Colors.grey.shade500)),
+          
+          const SizedBox(width: 12),
+          
+          // Amount
+          Text(
+            '${type == 'credit' ? '+' : '-'}${amount} F',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
         ],
       ),
     );

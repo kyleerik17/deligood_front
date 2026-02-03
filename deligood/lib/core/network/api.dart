@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class Api {
-  Api._(); // Empêche l'instanciation
+  Api._();
 
   // ===================== BASE URL =====================
   static const String _prodBaseUrl = 'http://127.0.0.1:8000';
@@ -15,6 +15,7 @@ class Api {
   static const Duration timeout = Duration(seconds: 20);
 
   // ===================== HEADERS =====================
+  // ✅ Unifié sur "Token" partout (Django REST Framework)
   static Future<Map<String, String>> _headers({bool auth = true}) async {
     final headers = <String, String>{
       HttpHeaders.contentTypeHeader: 'application/json',
@@ -22,11 +23,8 @@ class Api {
     };
 
     if (auth) {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('access_token');
-      if (token != null && token.isNotEmpty) {
-        headers[HttpHeaders.authorizationHeader] = 'Bearer $token';
-      }
+      final token = await getToken();
+      headers[HttpHeaders.authorizationHeader] = 'Token $token';
     }
 
     return headers;
@@ -99,26 +97,13 @@ class Api {
   static Future<String> getToken() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
-    if (token == null) throw Exception("Utilisateur non connecté");
+    if (token == null || token.isEmpty) throw Exception("Utilisateur non connecté");
     return token;
   }
 
   // ===================== GET USER INFO =====================
   static Future<Map<String, dynamic>> getUserInfo() async {
-    final token = await getToken();
-    final response = await http
-        .get(
-          Uri.parse('$baseUrl/users/me/'),
-          headers: {
-            'Authorization': 'Token $token',
-            'Content-Type': 'application/json',
-          },
-        )
-        .timeout(timeout);
-
-    if (response.statusCode != 200)
-      throw Exception("Impossible de récupérer le profil");
-    return jsonDecode(response.body);
+    return await get('/api/users/me/');
   }
 }
 
@@ -179,133 +164,128 @@ class AuthApiReg {
   }
 }
 
-// ===================== LIVREUR & PANIER API =====================
+// ===================== LIVREUR API =====================
 class LivreurApi {
-  // Marquer commande livrée
-  static Future<void> markOrderAsDelivered(int orderId) async {
-    if (orderId <= 0) throw Exception("Commande invalide");
-
-    final token = await Api.getToken();
-    final url = Uri.parse(
-      '${Api.baseUrl}api/orders/orders/livreur/$orderId/deliver/',
-    );
-
-    final response = await http
-        .post(
-          url,
-          headers: {
-            'Authorization': 'Token $token',
-            'Content-Type': 'application/json',
-          },
-        )
-        .timeout(const Duration(seconds: 10));
-
-    if (response.statusCode != 200) {
-      if (response.statusCode == 404) throw Exception('Commande introuvable');
-      throw Exception('Erreur serveur: ${response.statusCode}');
-    }
+  // ✅ Récupérer les courses disponibles
+  static Future<List<dynamic>> fetchCoursesDisponibles() async {
+    final data = await Api.get('/api/orders/orders/livreur/available/');
+    return data as List<dynamic>;
   }
 
+  // ✅ Prendre une course
+  static Future<dynamic> pickupCourse(int orderId) async {
+    return await Api.post('/api/orders/orders/livreur/$orderId/pickup/');
+  }
+
+  // ✅ Marquer commande comme livrée
+  static Future<void> markOrderAsDelivered(int orderId) async {
+    if (orderId <= 0) throw Exception("Commande invalide");
+    await Api.post('/api/orders/orders/livreur/$orderId/deliver/');
+  }
+
+  // ✅ Mes commandes (historique)
+  static Future<List<dynamic>> fetchMyOrders() async {
+    final data = await Api.get('/api/orders/orders/livreur/my-orders/');
+    return data as List<dynamic>;
+  }
+
+  // ✅ Commandes déjà livrées
+  static Future<List<dynamic>> fetchDeliveredOrders() async {
+    final data = await Api.get('/api/orders/orders/livreur/delivered/');
+    return data as List<dynamic>;
+  }
+}
+
+// ===================== PANIER API =====================
+class PanierApi {
   // Récupérer le panier
   static Future<List<dynamic>> fetchCart() async {
-    final token = await Api.getToken();
-    final response = await http.get(
-      Uri.parse('${Api.baseUrl}/api/orders/cart/'),
-      headers: {'Authorization': 'Token $token'},
-    );
-
-    if (response.statusCode != 200) throw Exception("Erreur chargement panier");
-    return jsonDecode(response.body);
+    final data = await Api.get('/api/orders/cart/');
+    return data as List<dynamic>;
   }
 
   // Supprimer un item du panier
   static Future<void> removeCartItem(int cartItemId) async {
-    final token = await Api.getToken();
-    final response = await http.delete(
-      Uri.parse('${Api.baseUrl}/orders/cart/$cartItemId/delete/'),
-      headers: {'Authorization': 'Token $token'},
-    );
+    await Api.delete('/api/orders/cart/$cartItemId/delete/');
+  }
 
-    if (response.statusCode != 200 && response.statusCode != 204) {
-      throw Exception("Échec suppression article du panier");
-    }
+  // Vider le panier
+  static Future<void> clearCart() async {
+    await Api.post('/api/orders/cart/clear/');
   }
 
   // Confirmer la commande
-  static Future<void> confirmOrder({
+  static Future<Map<String, dynamic>> confirmOrder({
     required String firstName,
     required String lastName,
     required String phoneNumber,
     required String locality,
   }) async {
-    final token = await Api.getToken();
-
-    // Création commande
-    final response = await http.post(
-      Uri.parse('${Api.baseUrl}/api/orders/orders/create/'),
-      headers: {
-        'Authorization': 'Token $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
+    final data = await Api.post(
+      '/api/orders/orders/create/',
+      body: {
         "first_name": firstName,
         "last_name": lastName,
         "locality": locality,
         "phone_number": phoneNumber,
-      }),
-    );
-
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception("Erreur lors de la confirmation de commande");
-    }
-
-    // Nettoyage du panier backend
-    await http.post(
-      Uri.parse('${Api.baseUrl}/cart/clear/'),
-      headers: {
-        'Authorization': 'Token $token',
-        'Content-Type': 'application/json',
       },
     );
+
+    // Nettoyage du panier après confirmation
+    await clearCart();
+
+    return data as Map<String, dynamic>;
   }
 }
 
+// ===================== PROFILE API =====================
 class ProfileApi {
   ProfileApi._();
 
-  // ================= GET PROFIL =================
   static Future<Map<String, dynamic>> fetchProfile() async {
-    final token = await Api.getToken();
-    final response = await http.get(
-      Uri.parse(
-        '${Api.baseUrl}/api/users/profile/',
-      ), // <-- à ajuster selon ton backend
-      headers: {
-        'Authorization': 'Token $token',
-        'Content-Type': 'application/json',
-      },
-    );
+    final data = await Api.get('/api/users/profile/');
+    final map = data as Map<String, dynamic>;
 
-    if (response.statusCode != 200) {
-      throw Exception('Erreur chargement profil');
-    }
-
-    final data = jsonDecode(response.body);
     // Sauvegarde locale
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('first_name', data['first_name'] ?? '');
-    await prefs.setString('last_name', data['last_name'] ?? '');
-    await prefs.setString('phone_number', data['phone_number'] ?? '');
-    await prefs.setString('user_type', data['user_type'] ?? '');
-    if (data['avatar_base64'] != null) {
-      await prefs.setString('avatar_base64', data['avatar_base64']);
+    await prefs.setString('first_name', map['first_name'] ?? '');
+    await prefs.setString('last_name', map['last_name'] ?? '');
+    await prefs.setString('phone_number', map['phone_number'] ?? '');
+    await prefs.setString('user_type', map['user_type'] ?? '');
+    if (map['avatar_base64'] != null) {
+      await prefs.setString('avatar_base64', map['avatar_base64']);
     }
 
-    return data;
+    return map;
   }
 
   static Uint8List? decodeAvatar(String? base64Str) {
     if (base64Str == null || base64Str.isEmpty) return null;
     return base64Decode(base64Str);
+  }
+}
+
+// ===================== RESTAURANT API =====================
+class RestaurantApi {
+  static Future<Map<String, dynamic>> confirmOrder({
+    required String firstName,
+    required String lastName,
+    required String phoneNumber,
+    required String locality,
+  }) async {
+    final data = await Api.post(
+      '/api/orders/orders/create/',
+      body: {
+        "first_name": firstName,
+        "last_name": lastName,
+        "locality": locality,
+        "phone_number": phoneNumber,
+      },
+    );
+
+    // Nettoyage du panier
+    await PanierApi.clearCart();
+
+    return data as Map<String, dynamic>;
   }
 }

@@ -1,9 +1,9 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http show get;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
+import 'package:http/http.dart' as http;
+import 'package:google_fonts/google_fonts.dart';
 import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/pages/confirm_order_page.dart';
 
@@ -48,33 +48,40 @@ class PanierPage extends StatefulWidget {
   State<PanierPage> createState() => _PanierPageState();
 }
 
-class _PanierPageState extends State<PanierPage> {
+class _PanierPageState extends State<PanierPage>
+    with SingleTickerProviderStateMixin {
   late Future<List<CartItem>> _futureCart;
+  late final AnimationController _listAnimationController;
 
   @override
   void initState() {
     super.initState();
+    _listAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
     _loadCart();
   }
 
+  @override
+  void dispose() {
+    _listAnimationController.dispose();
+    super.dispose();
+  }
+
   void _loadCart() {
-    print("🔄 Chargement du panier...");
-    _futureCart = LivreurApi.fetchCart().then((data) {
-      print("✅ Panier chargé avec ${data.length} items");
+    _futureCart = PanierApi.fetchCart().then((data) {
       return data.map((e) => CartItem.fromJson(e)).toList();
     });
   }
 
   Future<void> removeItem(int itemId) async {
-    print("🗑️ Suppression de l'item $itemId...");
     try {
-      await LivreurApi.removeCartItem(itemId);
-      print("✅ Item $itemId supprimé");
+      await PanierApi.removeCartItem(itemId);
       setState(() {
         _loadCart();
       });
     } catch (e) {
-      print("❌ Erreur suppression item $itemId: $e");
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -85,95 +92,82 @@ class _PanierPageState extends State<PanierPage> {
     }
   }
 
-Future<void> onConfirmOrder() async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-    print("🔑 Token trouvé: $token");
-    
-    print("🛠️ Tentative récupération du profil utilisateur...");
-    final response = await http.get(
-      Uri.parse('http://127.0.0.1:8000/api/users/profile/'), // <-- URL correcte
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Token $token',
-      },
-    );
+  Future<void> onConfirmOrder() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      final response = await http.get(
+        Uri.parse('http://127.0.0.1:8000/api/users/profile/'),
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Token $token'},
+      );
 
-    if (response.statusCode != 200) {
-      print("❌ Profil non trouvé: ${response.statusCode} ${response.body}");
-      throw Exception("Impossible de récupérer le profil");
-    }
+      if (response.statusCode != 200) throw Exception("Impossible de récupérer le profil");
 
-    final user = jsonDecode(response.body);
-    print("✅ Profil récupéré: $user");
-
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ConfirmOrderPage(
-          firstName: user['first_name'] ?? '',
-          lastName: user['last_name'] ?? '',
-          phoneNumber: user['phone_number'] ?? '',
-          locality: user['locality'] ?? '',
+      final user = jsonDecode(response.body);
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ConfirmOrderPage(
+            firstName: user['first_name'] ?? '',
+            lastName: user['last_name'] ?? '',
+            phoneNumber: user['phone_number'] ?? '',
+            locality: user['locality'] ?? '',
+          ),
         ),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
-    print("❌ Erreur récupération profil utilisateur: $e");
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Profil utilisateur incomplet"),
-        backgroundColor: Colors.redAccent,
-      ),
-    );
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Profil utilisateur incomplet"),
+          backgroundColor: Colors.redAccent,
+        ),
+      );
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
-        title: const Text(
+        backgroundColor: Colors.white,
+        elevation: 1,
+        centerTitle: true,
+        title: Text(
           "Mon Panier",
-          style: TextStyle(fontWeight: FontWeight.w600, fontFamily: 'Roboto'),
+          style: GoogleFonts.poppins(
+            fontWeight: FontWeight.bold,
+            fontSize: 18.sp,
+            color: const Color(0xFF1A1A1A),
+          ),
         ),
-        backgroundColor: Colors.deepOrange,
-        elevation: 0,
+        iconTheme: const IconThemeData(color: Color(0xFF1A1A1A)),
       ),
       body: FutureBuilder<List<CartItem>>(
         future: _futureCart,
         builder: (_, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            print("⏳ En attente du panier...");
             return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
-            print("❌ Erreur chargement panier: ${snapshot.error}");
             return Center(child: Text("Erreur : ${snapshot.error}"));
           }
 
           final items = snapshot.data ?? [];
 
           if (items.isEmpty) {
-            print("🛒 Panier vide");
-            return const Center(
+            return Center(
               child: Text(
                 "Votre panier est vide 🛒",
-                style: TextStyle(fontSize: 16),
+                style: GoogleFonts.poppins(fontSize: 14.sp, color: Colors.grey.shade600),
               ),
             );
           }
 
-          final total = items.fold<double>(
-            0,
-            (sum, item) => sum + item.price * item.quantity,
-          );
-          print("💰 Total panier: $total FCFA");
+          final total = items.fold<double>(0, (sum, item) => sum + item.price * item.quantity);
 
           return Column(
             children: [
@@ -183,61 +177,77 @@ Future<void> onConfirmOrder() async {
                   itemCount: items.length,
                   itemBuilder: (_, index) {
                     final item = items[index];
-                    return Container(
-                      margin: EdgeInsets.only(bottom: 2.h),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(2.h),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black12,
-                            blurRadius: 6,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
+
+                    return FadeTransition(
+                      opacity: Tween<double>(begin: 0, end: 1).animate(
+                        CurvedAnimation(
+                          parent: _listAnimationController,
+                          curve: Interval(index / items.length, 1.0, curve: Curves.easeOut),
+                        ),
                       ),
-                      child: Padding(
-                        padding: EdgeInsets.all(3.w),
-                        child: Row(
-                          children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: Image.network(
-                                item.image,
-                                width: 20.w,
-                                height: 20.w,
-                                fit: BoxFit.cover,
+                      child: ScaleTransition(
+                        scale: Tween<double>(begin: 0.95, end: 1).animate(
+                          CurvedAnimation(
+       parent: _listAnimationController,
+                            curve: Interval(index / items.length, 1.0, curve: Curves.easeOut),
+                          ),
+                        ),
+                        child: Container(
+                          margin: EdgeInsets.only(bottom: 2.h),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 6,
+                                offset: const Offset(0, 3),
                               ),
-                            ),
-                            SizedBox(width: 4.w),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    item.name,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13.sp,
-                                      fontFamily: 'Roboto',
-                                    ),
+                            ],
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.all(3.w),
+                            child: Row(
+                              children: [
+                                ClipRRect(
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: Image.network(
+                                    item.image,
+                                    width: 20.w,
+                                    height: 20.w,
+                                    fit: BoxFit.cover,
                                   ),
-                                  SizedBox(height: 0.5.h),
-                                  Text(
-                                    "${item.quantity} x ${item.price.toStringAsFixed(0)} FCFA",
-                                    style: TextStyle(
-                                      fontSize: 11.sp,
-                                      color: Colors.grey.shade700,
-                                    ),
+                                ),
+                                SizedBox(width: 4.w),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        item.name,
+                                        style: GoogleFonts.poppins(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13.sp,
+                                        ),
+                                      ),
+                                      SizedBox(height: 0.5.h),
+                                      Text(
+                                        "${item.quantity} x ${item.price.toStringAsFixed(0)} FCFA",
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 11.sp,
+                                          color: Colors.grey.shade700,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                  onPressed: () => removeItem(item.id),
+                                ),
+                              ],
                             ),
-                            IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.redAccent),
-                              onPressed: () => removeItem(item.id),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     );
@@ -267,15 +277,14 @@ Future<void> onConfirmOrder() async {
                       children: [
                         Text(
                           "Total",
-                          style: TextStyle(
+                          style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
                             fontSize: 14.sp,
-                            fontFamily: 'Roboto',
                           ),
                         ),
                         Text(
                           "${total.toStringAsFixed(0)} FCFA",
-                          style: TextStyle(
+                          style: GoogleFonts.poppins(
                             fontWeight: FontWeight.bold,
                             fontSize: 14.sp,
                             color: Colors.deepOrange,
@@ -295,7 +304,7 @@ Future<void> onConfirmOrder() async {
                           borderRadius: BorderRadius.circular(3.h),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.deepOrange.withOpacity(0.4),
+                              color: Colors.deepOrange.withOpacity(0.3),
                               blurRadius: 8,
                               offset: const Offset(0, 3),
                             ),
@@ -303,11 +312,10 @@ Future<void> onConfirmOrder() async {
                         ),
                         child: Text(
                           "Commander",
-                          style: TextStyle(
+                          style: GoogleFonts.poppins(
                             color: Colors.white,
                             fontWeight: FontWeight.bold,
                             fontSize: 14.sp,
-                            fontFamily: 'Roboto',
                           ),
                         ),
                       ),

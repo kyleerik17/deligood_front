@@ -1,12 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/livreur/screens/course_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 import 'package:gap/gap.dart';
-
 
 class HomeLivreur extends StatefulWidget {
   final CourseModel? course;
@@ -18,32 +19,55 @@ class HomeLivreur extends StatefulWidget {
 }
 
 class _HomeLivreurState extends State<HomeLivreur> {
-  late LatLng restaurantPos;
-  late LatLng clientPos;
-  late LatLng livreurPos;
-  late int orderId;
+  LatLng? restaurantPos;
+  LatLng? clientPos;
+  LatLng? livreurPos;
+  int orderId = 0;
   Timer? timer;
+  bool _delivered = false;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    _loadCourse();
+  }
 
-    if (widget.course != null) {
-      restaurantPos = widget.course!.restaurantPos;
-      clientPos = widget.course!.customerPos;
-      orderId = widget.course!.id;
-    } else {
-      restaurantPos = LatLng(5.3292, -4.0082);
-      clientPos = LatLng(5.3290, -4.0080);
-      orderId = 0;
+  // ✅ Charger la course depuis le paramètre OU depuis SharedPreferences
+  Future<void> _loadCourse() async {
+    CourseModel? course = widget.course;
+
+    // Si rien passé en paramètre, on cherche dans SharedPreferences
+    if (course == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString('active_course');
+      if (saved != null) {
+        course = CourseModel.fromJson(jsonDecode(saved));
+      }
     }
 
-    livreurPos = LatLng(
-      restaurantPos.latitude - 0.0007,
-      restaurantPos.longitude - 0.0007,
-    );
+    if (!mounted) return;
 
-    timer = Timer.periodic(const Duration(seconds: 2), (_) => moveLivreur());
+    if (course != null) {
+      setState(() {
+        restaurantPos = course!.restaurantPos;
+        clientPos = course!.customerPos;
+        orderId = course!.id;
+        livreurPos = LatLng(
+          restaurantPos!.latitude - 0.0007,
+          restaurantPos!.longitude - 0.0007,
+        );
+        _loading = false;
+      });
+
+      // Démarrer le timer après avoir chargé la course
+      timer = Timer.periodic(const Duration(seconds: 2), (_) => moveLivreur());
+    } else {
+      // Aucune course trouvée
+      setState(() {
+        _loading = false;
+      });
+    }
   }
 
   @override
@@ -53,11 +77,14 @@ class _HomeLivreurState extends State<HomeLivreur> {
   }
 
   void moveLivreur() {
-    if (orderId == 0) return;
+    if (orderId == 0 || _delivered || livreurPos == null || clientPos == null)
+      return;
     setState(() {
       livreurPos = LatLng(
-        livreurPos.latitude + (clientPos.latitude - livreurPos.latitude) * 0.12,
-        livreurPos.longitude + (clientPos.longitude - livreurPos.longitude) * 0.12,
+        livreurPos!.latitude +
+            (clientPos!.latitude - livreurPos!.latitude) * 0.12,
+        livreurPos!.longitude +
+            (clientPos!.longitude - livreurPos!.longitude) * 0.12,
       );
     });
   }
@@ -65,6 +92,12 @@ class _HomeLivreurState extends State<HomeLivreur> {
   double calculateDistance(LatLng start, LatLng end) {
     final Distance distance = Distance();
     return distance.as(LengthUnit.Meter, start, end);
+  }
+
+  // ✅ Supprimer la course sauvegardée après livraison
+  Future<void> clearSavedCourse() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('active_course');
   }
 
   Future<void> markAsDelivered() async {
@@ -78,6 +111,15 @@ class _HomeLivreurState extends State<HomeLivreur> {
     try {
       await LivreurApi.markOrderAsDelivered(orderId);
       if (!mounted) return;
+
+      // ✅ Supprimer la course de SharedPreferences après livraison
+      await clearSavedCourse();
+
+      setState(() {
+        _delivered = true;
+      });
+      timer?.cancel();
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Commande livrée avec succès !')),
       );
@@ -91,26 +133,37 @@ class _HomeLivreurState extends State<HomeLivreur> {
 
   @override
   Widget build(BuildContext context) {
+    // Loader tant qu'on attend la lecture de SharedPreferences
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    // Aucune course trouvée ni en paramètre ni en SharedPreferences
     if (orderId == 0) {
       return Scaffold(
         backgroundColor: Colors.grey.shade50,
         body: Center(
           child: Text(
-            "Aucune course sélectionnée",
+            "Aucune course en cours",
             style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
           ),
         ),
       );
     }
 
-    final livreurDistanceToClient = calculateDistance(livreurPos, clientPos);
-    final livreurDistanceToRestaurant = calculateDistance(livreurPos, restaurantPos);
+    final livreurDistanceToClient =
+        calculateDistance(livreurPos!, clientPos!);
+    final livreurDistanceToRestaurant =
+        calculateDistance(livreurPos!, restaurantPos!);
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       body: Column(
         children: [
-          // AppBar Gradient
+          // ======================== AppBar Gradient ========================
           Container(
             width: double.infinity,
             padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
@@ -139,105 +192,136 @@ class _HomeLivreurState extends State<HomeLivreur> {
             ),
           ),
           Gap(2.h),
+
+          // ======================== Contenu principal ========================
           Expanded(
-            child: Column(
-              children: [
-                SizedBox(
-                  height: 35.h,
-                  child: FlutterMap(
-                    options: MapOptions(
-                      initialCenter: livreurPos,
-                      initialZoom: 18,
-                    ),
-                    children: [
-                      TileLayer(
-                        urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                        userAgentPackageName: 'com.example.deligood',
-                      ),
-                      MarkerLayer(
-                        markers: [
-                          _customMarker(clientPos, "Client", Colors.blue),
-                          _customMarker(restaurantPos, "Restaurant", Colors.orange),
-                          _customMarker(livreurPos, "Livreur", Colors.red),
-                        ],
-                      ),
-                      PolylineLayer(
-                        polylines: [
-                          Polyline(
-                            points: [restaurantPos, livreurPos, clientPos],
-                            color: Colors.deepOrangeAccent,
-                            strokeWidth: 4,
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Padding(
+                padding: EdgeInsets.only(bottom: 4.h),
+                child: Column(
+                  children: [
+                    // ============ MAP ============
+                    SizedBox(
+                      height: 35.h,
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: livreurPos!,
+                          initialZoom: 18,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                            userAgentPackageName: 'com.example.deligood',
+                          ),
+                          MarkerLayer(
+                            markers: [
+                              _customMarker(
+                                  restaurantPos!, "Restaurant", Colors.orange),
+                              _customMarker(clientPos!, "Client", Colors.blue),
+                              _customMarker(livreurPos!, "Livreur", Colors.red),
+                            ],
+                          ),
+                          PolylineLayer(
+                            polylines: [
+                              Polyline(
+                                points: [restaurantPos!, livreurPos!, clientPos!],
+                                color: Colors.deepOrangeAccent,
+                                strokeWidth: 4,
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
-                  ),
-                ),
-                Gap(2.h),
-                SizedBox(
-                  height: 8.h,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _stepIndicator("Restaurant", Colors.orange),
-                      _lineBetween(),
-                      _stepIndicator("Livreur", Colors.red),
-                      _lineBetween(),
-                      _stepIndicator("Client", Colors.blue),
-                    ],
-                  ),
-                ),
-                Gap(2.h),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 4.w),
-                  child: Column(
-                    children: [
-                      _InfoCard(
-                        title: "Distance livreur → restaurant",
-                        value: "${livreurDistanceToRestaurant.toStringAsFixed(0)} m",
-                        color: Colors.orange,
-                        icon: Icons.store,
-                      ),
-                      Gap(1.h),
-                      _InfoCard(
-                        title: "Distance livreur → client",
-                        value: "${livreurDistanceToClient.toStringAsFixed(0)} m",
-                        color: Colors.blue,
-                        icon: Icons.person,
-                      ),
-                    ],
-                  ),
-                ),
-                Gap(2.h),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6.w),
-                  child: ElevatedButton(
-                    onPressed: markAsDelivered,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      padding: EdgeInsets.symmetric(vertical: 2.h),
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.check_circle, color: Colors.white),
-                        Gap(2.w),
-                        Text(
-                          "Marquer comme Livré",
-                          style: TextStyle(
-                            fontSize: 14.sp,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                    Gap(2.h),
+
+                    // ============ INDICATEUR D'ÉTAPES ============
+                    SizedBox(
+                      height: 8.h,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _stepIndicator("Restaurant", Colors.orange),
+                          _lineBetween(),
+                          _stepIndicator("Livreur", Colors.red),
+                          _lineBetween(),
+                          _stepIndicator("Client", Colors.blue),
+                        ],
+                      ),
+                    ),
+                    Gap(2.h),
+
+                    // ============ CARTES DE DISTANCE ============
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4.w),
+                      child: Column(
+                        children: [
+                          _infoCard(
+                            title: "Distance livreur → restaurant",
+                            value:
+                                "${livreurDistanceToRestaurant.toStringAsFixed(0)} m",
+                            color: Colors.orange,
+                            icon: Icons.store,
+                          ),
+                          Gap(1.h),
+                          _infoCard(
+                            title: "Distance livreur → client",
+                            value:
+                                "${livreurDistanceToClient.toStringAsFixed(0)} m",
+                            color: Colors.blue,
+                            icon: Icons.person,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Gap(2.h),
+
+                    // ============ BOUTON MARQUER COMME LIVRÉ ============
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 6.w),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _delivered ? null : markAsDelivered,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            disabledBackgroundColor:
+                                Colors.green.withOpacity(0.4),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            padding: EdgeInsets.symmetric(vertical: 2.h),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                _delivered
+                                    ? Icons.check_circle
+                                    : Icons.check_circle_outline,
+                                color: Colors.white,
+                              ),
+                              Gap(2.w),
+                              Text(
+                                _delivered
+                                    ? "Déjà livré"
+                                    : "Marquer comme Livré",
+                                style: TextStyle(
+                                  fontSize: 14.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -249,6 +333,8 @@ class _HomeLivreurState extends State<HomeLivreur> {
       ),
     );
   }
+
+  // ======================== WIDGETS RÉUTILISABLES ========================
 
   Marker _customMarker(LatLng pos, String label, Color color) {
     return Marker(
@@ -280,7 +366,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
     );
   }
 
-  Widget _InfoCard({
+  Widget _infoCard({
     required String title,
     required String value,
     required Color color,
@@ -332,5 +418,6 @@ class _HomeLivreurState extends State<HomeLivreur> {
         ],
       );
 
-  Widget _lineBetween() => Container(width: 5.w, height: 3, color: Colors.grey.shade300);
+  Widget _lineBetween() =>
+      Container(width: 5.w, height: 3, color: Colors.grey.shade300);
 }

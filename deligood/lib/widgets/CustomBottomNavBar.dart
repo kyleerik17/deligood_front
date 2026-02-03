@@ -1,3 +1,4 @@
+import 'package:deligood/features/restaurant/screens/commande_resto_page.dart';
 import 'package:flutter/material.dart';
 import 'package:deligood/features/client/screens/home_screen.dart';
 import 'package:deligood/features/pages/panier_page.dart';
@@ -7,7 +8,6 @@ import 'package:deligood/features/livreur/screens/pages/Home_livreur.dart';
 import 'package:deligood/features/livreur/screens/pages/historique_liv.dart';
 import 'package:deligood/features/livreur/screens/course_page.dart';
 import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
-import 'package:deligood/features/restaurant/screens/commande_resto.dart';
 import 'package:deligood/features/pages/cree_menu_page.dart';
 
 class CustomBottomNavBar extends StatefulWidget {
@@ -26,14 +26,12 @@ class CustomBottomNavBar extends StatefulWidget {
 
 class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   int _currentIndex = 0;
-  CourseModel? selectedCourse;
 
   @override
   void didUpdateWidget(covariant CustomBottomNavBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.userRole != widget.userRole) {
       _currentIndex = 0;
-      selectedCourse = null;
     }
   }
 
@@ -42,24 +40,17 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
     switch (widget.userRole) {
       // ================= LIVREUR =================
       case "livreur":
-        return [
-          HomeLivreur(course: selectedCourse),
-          CoursePage(
-            onCourseTaken: (course) {
-              setState(() {
-                selectedCourse = course;
-                _currentIndex = 0;
-              });
-            },
-          ),
-          const HistoryLivPage(),
-          const ProfilePage(),
+        return const [
+          HomeLivreur(),
+          CoursePage(),
+          HistoryLivPage(),
+          ProfilePage(),
         ];
 
       // ================= RESTAURANT =================
       case "restaurant":
         return [
-          HomeRestaurant(orderId: widget.orderId), // ← important pour suivre la commande
+          HomeRestaurant(orderId: widget.orderId),
           const CommandeRestoPage(),
           CreateMenuPage(
             userRole: widget.userRole,
@@ -122,9 +113,9 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.black,
+        backgroundColor: Colors.white,
         selectedItemColor: Colors.deepOrange,
-        unselectedItemColor: Colors.white,
+        unselectedItemColor: Colors.grey,
         items: _buildItems(),
         onTap: (index) {
           setState(() {
