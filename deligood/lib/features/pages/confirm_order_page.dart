@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:sizer/sizer.dart';
 import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
 

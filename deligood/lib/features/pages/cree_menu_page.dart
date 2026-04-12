@@ -1,9 +1,6 @@
 import 'dart:typed_data';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 import 'package:google_fonts/google_fonts.dart';
 
 class CreateMenuPage extends StatefulWidget {
@@ -22,17 +19,12 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
   final descCtrl = TextEditingController();
   final priceCtrl = TextEditingController();
 
-  int? categoryId;
+  String? selectedCategory;
   Uint8List? imageBytes;
   bool loading = false;
-  List<Map<String, dynamic>> categories = [];
   final picker = ImagePicker();
 
-  @override
-  void initState() {
-    super.initState();
-    fetchCategories();
-  }
+  final List<String> categories = ['Nourriture', 'Boisson', 'Dessert'];
 
   @override
   void dispose() {
@@ -42,7 +34,6 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
     super.dispose();
   }
 
-  // --- LOGIQUE (Gardée intacte mais propre) ---
   Future<void> pickImage() async {
     final img = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (img != null) {
@@ -51,39 +42,35 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
     }
   }
 
-  Future<void> fetchCategories() async {
-    final uri = Uri.parse('http://127.0.0.1:8000/api/menu/categories/');
-    try {
-      final response = await http.get(uri);
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        setState(() {
-          categories = data.map((c) => {'id': c['id'] as int, 'name': c['name'] as String}).toList();
-        });
-      }
-    } catch (e) {
-      debugPrint('Erreur categories: $e');
-    }
+  void submit() {
+  if (!_formKey.currentState!.validate() || selectedCategory == null || imageBytes == null) {
+    _showSnackBar("Veuillez remplir tous les champs et l'image", Colors.redAccent);
+    return;
   }
 
-  Future<void> submit() async {
-    if (!_formKey.currentState!.validate() || categoryId == null) {
-      _showSnackBar("Veuillez remplir tous les champs et l'image", Colors.redAccent);
-      return;
-    }
-    // ... Ta logique de submit reste la même, on gère juste le loading proprement
-    setState(() => loading = true);
-    // [Appel API simulé ou ton code original ici]
-    // Après succès : Navigator.pop(context);
-  }
+  setState(() => loading = true);
+
+  // Ici ton code API pour envoyer le plat
+  Future.delayed(const Duration(seconds: 2), () {
+    setState(() => loading = false);
+    _showSnackBar("Plat publié avec succès !", Colors.green);
+
+    // 🔹 Nouveau : afficher un print et rester sur la page
+    print("Plat publié : ${nameCtrl.text}, Catégorie : $selectedCategory, Prix : ${priceCtrl.text} FCFA");
+    
+    // Pas de Navigator.pop, on reste sur la page
+  });
+}
+
 
   void _showSnackBar(String message, Color color) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color, behavior: SnackBarBehavior.floating),
+      SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          behavior: SnackBarBehavior.floating),
     );
   }
-
-  // --- UI COMPONENTS ---
 
   Widget _buildTextField({
     required TextEditingController controller,
@@ -95,7 +82,9 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.grey[800])),
+        Text(label,
+            style: GoogleFonts.poppins(
+                fontWeight: FontWeight.w600, fontSize: 14, color: Colors.grey[800])),
         const SizedBox(height: 8),
         TextFormField(
           controller: controller,
@@ -107,9 +96,15 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
             filled: true,
             fillColor: Colors.grey[50],
             contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[300]!)),
-            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Colors.deepOrange, width: 1.5)),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[300]!)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: Colors.grey[200]!)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Colors.deepOrange, width: 1.5)),
           ),
           validator: (v) => v!.isEmpty ? 'Ce champ est obligatoire' : null,
         ),
@@ -130,7 +125,8 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
         ),
         title: Text(
           'Ajouter au Menu',
-          style: GoogleFonts.poppins(color: Colors.black, fontWeight: FontWeight.bold),
+          style: GoogleFonts.poppins(
+              color: Colors.black, fontWeight: FontWeight.bold),
         ),
         centerTitle: true,
       ),
@@ -141,7 +137,7 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Section Upload Image
+              // Upload Image
               Center(
                 child: GestureDetector(
                   onTap: pickImage,
@@ -160,7 +156,9 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
                             children: [
                               const Icon(Icons.add_a_photo_rounded, size: 40, color: Colors.deepOrange),
                               const SizedBox(height: 8),
-                              Text("Ajouter une photo du plat", style: GoogleFonts.poppins(color: Colors.deepOrange, fontWeight: FontWeight.w500)),
+                              Text("Ajouter une photo du plat",
+                                  style: GoogleFonts.poppins(
+                                      color: Colors.deepOrange, fontWeight: FontWeight.w500)),
                             ],
                           )
                         : ClipRRect(
@@ -175,22 +173,23 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
               // Formulaire
               _buildTextField(controller: nameCtrl, label: "Nom du plat", icon: Icons.restaurant_menu),
               const SizedBox(height: 20),
-              
+
               _buildTextField(
-                controller: descCtrl, 
-                label: "Description", 
+                controller: descCtrl,
+                label: "Description",
                 icon: Icons.description_outlined,
                 maxLines: 3,
               ),
               const SizedBox(height: 20),
 
+              // Prix + Dropdown catégorie
               Row(
                 children: [
                   Expanded(
                     flex: 2,
                     child: _buildTextField(
-                      controller: priceCtrl, 
-                      label: "Prix (FCFA)", 
+                      controller: priceCtrl,
+                      label: "Prix (FCFA)",
                       icon: Icons.payments_outlined,
                       type: TextInputType.number,
                     ),
@@ -201,28 +200,36 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("Catégorie", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 14)),
+                        Text("Catégorie",
+                            style: GoogleFonts.poppins(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<int>(
-                          value: categoryId,
+                        DropdownButtonFormField<String>(
+                          initialValue: selectedCategory,
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.grey[50],
                             contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Colors.grey[200]!)),
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(color: Colors.grey[200]!)),
                           ),
-                          items: categories.map((c) => DropdownMenuItem<int>(value: c['id'], child: Text(c['name']))).toList(),
-                          onChanged: (v) => setState(() => categoryId = v),
+                          items: categories
+                              .map((c) => DropdownMenuItem<String>(
+                                    value: c,
+                                    child: Text(c),
+                                  ))
+                              .toList(),
+                          onChanged: (v) => setState(() => selectedCategory = v),
                         ),
                       ],
                     ),
                   ),
                 ],
               ),
-              
               const SizedBox(height: 40),
 
-              // Bouton Submit
+              // Submit
               SizedBox(
                 width: double.infinity,
                 height: 55,
@@ -237,7 +244,11 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
                   ),
                   child: loading
                       ? const CircularProgressIndicator(color: Colors.white)
-                      : Text('PUBLIER LE PLAT', style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                      : Text('PUBLIER LE PLAT',
+                          style: GoogleFonts.poppins(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              letterSpacing: 1.2)),
                 ),
               ),
             ],

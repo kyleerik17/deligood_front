@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:gap/gap.dart';
-import 'package:sizer/sizer.dart';
 import 'commande_resto_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';

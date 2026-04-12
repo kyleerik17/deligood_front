@@ -51,8 +51,8 @@ class _HomeLivreurState extends State<HomeLivreur> {
     if (course != null) {
       setState(() {
         restaurantPos = course!.restaurantPos;
-        clientPos = course!.customerPos;
-        orderId = course!.id;
+        clientPos = course.customerPos;
+        orderId = course.id;
         livreurPos = LatLng(
           restaurantPos!.latitude - 0.0007,
           restaurantPos!.longitude - 0.0007,
@@ -77,8 +77,9 @@ class _HomeLivreurState extends State<HomeLivreur> {
   }
 
   void moveLivreur() {
-    if (orderId == 0 || _delivered || livreurPos == null || clientPos == null)
+    if (orderId == 0 || _delivered || livreurPos == null || clientPos == null) {
       return;
+    }
     setState(() {
       livreurPos = LatLng(
         livreurPos!.latitude +

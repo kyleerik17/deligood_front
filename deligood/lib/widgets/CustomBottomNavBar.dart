@@ -1,6 +1,6 @@
+import 'package:deligood/features/client/screens/Home_screen.dart';
 import 'package:deligood/features/restaurant/screens/commande_resto_page.dart';
 import 'package:flutter/material.dart';
-import 'package:deligood/features/client/screens/home_screen.dart';
 import 'package:deligood/features/pages/panier_page.dart';
 import 'package:deligood/features/pages/profil_page.dart';
 import 'package:deligood/features/livreur/screens/pages/RestaurantPage.dart';
@@ -61,8 +61,8 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
 
       // ================= CLIENT =================
       default:
-        return const [
-          HomeScreen(),
+        return  [
+          HomeScreen(orderId: widget.orderId),
           RestaurantPage(),
           PanierPage(),
           ProfilePage(),

@@ -4,18 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+// ===================== API BASE =====================
 class Api {
   Api._();
 
-  // ===================== BASE URL =====================
-  static const String _prodBaseUrl = 'http://127.0.0.1:8000';
-  static const String _devBaseUrl = 'http://127.0.0.1:8000';
-
-  static String get baseUrl => kReleaseMode ? _prodBaseUrl : _devBaseUrl;
+  static const String baseUrl = 'http://127.0.0.1:8000';
   static const Duration timeout = Duration(seconds: 20);
 
   // ===================== HEADERS =====================
-  // ✅ Unifié sur "Token" partout (Django REST Framework)
   static Future<Map<String, String>> _headers({bool auth = true}) async {
     final headers = <String, String>{
       HttpHeaders.contentTypeHeader: 'application/json',
@@ -23,8 +19,10 @@ class Api {
     };
 
     if (auth) {
-      final token = await getToken();
-      headers[HttpHeaders.authorizationHeader] = 'Token $token';
+      final token = await getTokenSafe();
+      if (token != null) {
+        headers[HttpHeaders.authorizationHeader] = 'Token $token'; // ✅ Django TokenAuth
+      }
     }
 
     return headers;
@@ -33,10 +31,12 @@ class Api {
   // ===================== RESPONSE HANDLER =====================
   static dynamic _handleResponse(http.Response response) {
     final status = response.statusCode;
+
     if (status >= 200 && status < 300) {
       if (response.body.isEmpty) return null;
       return jsonDecode(response.body);
     }
+
     debugPrint('API ERROR [$status]: ${response.body}');
     throw HttpException('Erreur serveur ($status)');
   }
@@ -51,11 +51,8 @@ class Api {
   }
 
   // ===================== POST =====================
-  static Future<dynamic> post(
-    String endpoint, {
-    Map<String, dynamic>? body,
-    bool auth = true,
-  }) async {
+  static Future<dynamic> post(String endpoint,
+      {Map<String, dynamic>? body, bool auth = true}) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     final response = await http
         .post(
@@ -68,11 +65,8 @@ class Api {
   }
 
   // ===================== PUT =====================
-  static Future<dynamic> put(
-    String endpoint, {
-    Map<String, dynamic>? body,
-    bool auth = true,
-  }) async {
+  static Future<dynamic> put(String endpoint,
+      {Map<String, dynamic>? body, bool auth = true}) async {
     final uri = Uri.parse('$baseUrl$endpoint');
     final response = await http
         .put(
@@ -93,17 +87,25 @@ class Api {
     return _handleResponse(response);
   }
 
-  // ===================== GET TOKEN =====================
-  static Future<String> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-    if (token == null || token.isEmpty) throw Exception("Utilisateur non connecté");
-    return token;
+  // ===================== TOKEN SAFE =====================
+  static Future<String?> getTokenSafe() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      if (token == null || token.isEmpty) return null;
+      return token;
+    } catch (_) {
+      return null;
+    }
   }
 
-  // ===================== GET USER INFO =====================
-  static Future<Map<String, dynamic>> getUserInfo() async {
-    return await get('/api/users/me/');
+  // ===================== TOKEN STRICT =====================
+  static Future<String> getToken() async {
+    final token = await getTokenSafe();
+    if (token == null) {
+      throw Exception("Utilisateur non connecté ou session expirée");
+    }
+    return token;
   }
 }
 
@@ -126,7 +128,10 @@ class AuthApi {
         )
         .timeout(const Duration(seconds: 10));
 
-    if (response.statusCode != 200) throw Exception('Erreur serveur');
+    if (response.statusCode != 200) {
+      throw Exception('Erreur serveur');
+    }
+
     final data = jsonDecode(response.body);
     return data['reset_allowed'] == true;
   }
@@ -148,7 +153,8 @@ class AuthApiReg {
           headers: {'Content-Type': 'application/json'},
           body: jsonEncode({
             'phone_number': phone,
-            'pin': pin,
+            'pin': pin, 
+            'pin_confirmation': pin,
             'first_name': firstName,
             'last_name': lastName,
             'locality': locality,
@@ -158,6 +164,7 @@ class AuthApiReg {
         .timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200 && response.statusCode != 201) {
+      debugPrint('❌ Register error body: ${response.body}'); // ← AJOUTE ÇA
       final data = jsonDecode(response.body);
       throw Exception(data['detail'] ?? 'Erreur inscription');
     }
@@ -166,30 +173,25 @@ class AuthApiReg {
 
 // ===================== LIVREUR API =====================
 class LivreurApi {
-  // ✅ Récupérer les courses disponibles
   static Future<List<dynamic>> fetchCoursesDisponibles() async {
     final data = await Api.get('/api/orders/orders/livreur/available/');
     return data as List<dynamic>;
   }
 
-  // ✅ Prendre une course
   static Future<dynamic> pickupCourse(int orderId) async {
     return await Api.post('/api/orders/orders/livreur/$orderId/pickup/');
   }
 
-  // ✅ Marquer commande comme livrée
   static Future<void> markOrderAsDelivered(int orderId) async {
     if (orderId <= 0) throw Exception("Commande invalide");
     await Api.post('/api/orders/orders/livreur/$orderId/deliver/');
   }
 
-  // ✅ Mes commandes (historique)
   static Future<List<dynamic>> fetchMyOrders() async {
     final data = await Api.get('/api/orders/orders/livreur/my-orders/');
     return data as List<dynamic>;
   }
 
-  // ✅ Commandes déjà livrées
   static Future<List<dynamic>> fetchDeliveredOrders() async {
     final data = await Api.get('/api/orders/orders/livreur/delivered/');
     return data as List<dynamic>;
@@ -198,23 +200,19 @@ class LivreurApi {
 
 // ===================== PANIER API =====================
 class PanierApi {
-  // Récupérer le panier
   static Future<List<dynamic>> fetchCart() async {
     final data = await Api.get('/api/orders/cart/');
     return data as List<dynamic>;
   }
 
-  // Supprimer un item du panier
   static Future<void> removeCartItem(int cartItemId) async {
     await Api.delete('/api/orders/cart/$cartItemId/delete/');
   }
 
-  // Vider le panier
   static Future<void> clearCart() async {
     await Api.post('/api/orders/cart/clear/');
   }
 
-  // Confirmer la commande
   static Future<Map<String, dynamic>> confirmOrder({
     required String firstName,
     required String lastName,
@@ -230,10 +228,7 @@ class PanierApi {
         "phone_number": phoneNumber,
       },
     );
-
-    // Nettoyage du panier après confirmation
     await clearCart();
-
     return data as Map<String, dynamic>;
   }
 }
@@ -246,12 +241,12 @@ class ProfileApi {
     final data = await Api.get('/api/users/profile/');
     final map = data as Map<String, dynamic>;
 
-    // Sauvegarde locale
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('first_name', map['first_name'] ?? '');
     await prefs.setString('last_name', map['last_name'] ?? '');
     await prefs.setString('phone_number', map['phone_number'] ?? '');
     await prefs.setString('user_type', map['user_type'] ?? '');
+
     if (map['avatar_base64'] != null) {
       await prefs.setString('avatar_base64', map['avatar_base64']);
     }
@@ -282,10 +277,7 @@ class RestaurantApi {
         "phone_number": phoneNumber,
       },
     );
-
-    // Nettoyage du panier
     await PanierApi.clearCart();
-
     return data as Map<String, dynamic>;
   }
 }

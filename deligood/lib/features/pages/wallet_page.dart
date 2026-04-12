@@ -1,12 +1,10 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
-import 'package:sizer/sizer.dart';
 import 'package:intl/intl.dart';
 import 'package:deligood/core/network/api.dart';
 
 class WalletPage extends StatefulWidget {
-  const WalletPage({Key? key}) : super(key: key);
+  const WalletPage({super.key});
 
   @override
   State<WalletPage> createState() => _WalletPageState();
@@ -463,7 +461,7 @@ class _WalletPageState extends State<WalletPage> {
           
           // Amount
           Text(
-            '${type == 'credit' ? '+' : '-'}${amount} F',
+            '${type == 'credit' ? '+' : '-'}$amount F',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w700,

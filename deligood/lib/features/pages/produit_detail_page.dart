@@ -9,8 +9,11 @@ import 'panier_page.dart';
 
 class ProduitDetailPage extends StatefulWidget {
   final MenuItem menuItem;
+    final int restaurantId;
+  final String restaurantName;
+  final String image;
 
-  const ProduitDetailPage({super.key, required this.menuItem});
+  const ProduitDetailPage({super.key, required this.menuItem, required this.restaurantId, required this.restaurantName, required this.image});
 
   @override
   State<ProduitDetailPage> createState() => _ProduitDetailPageState();
@@ -20,39 +23,58 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
   int quantity = 1;
   bool loading = false;
 
-  Future<void> ajouterAuPanier() async {
-    setState(() => loading = true);
+ Future<void> ajouterAuPanier() async {
+  setState(() => loading = true);
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('access_token');
 
-    final response = await http.post(
-      Uri.parse('http://127.0.0.1:8000/api/orders/cart/add/'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Token $token',
-      },
-      body: jsonEncode({
-        "menu_item_id": widget.menuItem.id,
-        "quantity": quantity,
-      }),
+  final response = await http.post(
+    Uri.parse('http://127.0.0.1:8000/api/orders/cart/add/'),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Token $token',
+    },
+    body: jsonEncode({
+      "menu_item_id": widget.menuItem.id,
+      "quantity": quantity,
+    }),
+  );
+
+  setState(() => loading = false);
+
+  if (response.statusCode == 200) {
+    // Afficher un message de succès sans redirection
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text("$quantity x ${widget.menuItem.name} ajouté(s) au panier"),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+        action: SnackBarAction(
+          label: 'Voir le panier',
+          textColor: Colors.white,
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PanierPage()),
+            );
+          },
+        ),
+      ),
     );
-
-    setState(() => loading = false);
-
-    if (response.statusCode == 200) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const PanierPage()),
-      );
-    } else {
-      debugPrint(response.body);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Erreur ajout panier")),
-      );
-    }
+    
+    // Réinitialiser la quantité (optionnel)
+    setState(() => quantity = 1);
+  } else {
+    debugPrint(response.body);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Erreur ajout panier"),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
-
+}
   @override
   Widget build(BuildContext context) {
     final item = widget.menuItem;

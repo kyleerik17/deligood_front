@@ -390,7 +390,7 @@ class _ErrorView extends StatelessWidget {
 
 // ========================== VUE VIDE ==========================
 class _EmptyView extends StatelessWidget {
-  const _EmptyView({super.key});
+  const _EmptyView();
 
   @override
   Widget build(BuildContext context) {

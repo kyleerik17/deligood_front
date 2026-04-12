@@ -1,37 +1,126 @@
 import 'dart:async';
-import 'dart:convert';
+import 'package:deligood/core/network/websocket_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:sizer/sizer.dart';
 import 'package:gap/gap.dart';
-import 'package:http/http.dart' as http;
+
+import '../../../services/api_service.dart';
+
+// ========== MODELS ==========
+
+enum WebSocketEventType {
+  orderStatusChanged,
+  orderAssigned,
+  orderDelivered,
+  locationUpdated,
+}
+
+class WebSocketEvent {
+  final int orderId;
+  final WebSocketEventType type;
+  final String? newStatus;
+  final String? message;
+  final Map<String, dynamic>? eventData;
+
+  WebSocketEvent({
+    required this.orderId,
+    required this.type,
+    this.newStatus,
+    this.message,
+    this.eventData,
+  });
+
+  factory WebSocketEvent.fromJson(Map<String, dynamic> json) {
+    WebSocketEventType eventType = WebSocketEventType.locationUpdated;
+    try {
+      eventType = WebSocketEventType.values.firstWhere(
+        (e) => e.toString().split('.').last == json['type'],
+        orElse: () => WebSocketEventType.locationUpdated,
+      );
+    } catch (_) {}
+
+    return WebSocketEvent(
+      orderId: json['order_id'] ?? 0,
+      type: eventType,
+      newStatus: json['new_status'],
+      message: json['message'],
+      eventData: (json['event_data'] as Map?)?.cast<String, dynamic>(),
+    );
+  }
+}
+
+// ========== MAIN WIDGET ==========
 
 class HomeScreen extends StatefulWidget {
-  final int? orderId;
+  final int orderId;
 
-  const HomeScreen({super.key, this.orderId});
+  const HomeScreen({super.key, required this.orderId});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
-  LatLng clientPos = const LatLng(5.348, -4.027);
-  LatLng restaurantPos = const LatLng(5.348, -4.027);
-  LatLng deliveryPos = const LatLng(5.348, -4.027);
+  // ========== STATE VARIABLES ==========
 
-  Timer? timer;
-  late AnimationController _pulseController;
-  late AnimationController _slideUpController;
-  
+  // Positions
+  LatLng? clientPos;
+  LatLng? restaurantPos;
+  LatLng? deliveryPos;
+
+  // État de l'écran
+  String orderStatus = 'pending';
   bool isLoading = true;
   bool isBottomSheetExpanded = false;
+  String? errorMessage;
+  Map<String, dynamic>? orderData;
+
+  // WebSocket & Tracking
+  WebSocketService? _wsService;
+  LocationTrackingService? _trackingService;
+  StreamSubscription? _wsSubscription;
+  StreamSubscription? _trackingSubscription;
+
+  // Animations
+  late AnimationController _pulseController;
+  late AnimationController _slideUpController;
+
+  // Map
+  final MapController _mapController = MapController();
+
+  // ========== LIFECYCLE ==========
 
   @override
   void initState() {
     super.initState();
+    _initAnimations();
+    _safeInit();
+  }
 
+  @override
+  void dispose() {
+    _cleanupResources();
+    super.dispose();
+  }
+
+  void _cleanupResources() {
+    try {
+      _wsSubscription?.cancel();
+      _trackingSubscription?.cancel();
+      _pulseController.dispose();
+      _slideUpController.dispose();
+      _wsService?.disconnect();
+      _trackingService?.disconnect();
+    } catch (e) {
+      debugPrint('⚠️ Erreur nettoyage: $e');
+    }
+  }
+
+  // ========== INITIALIZATION ==========
+
+  void _initAnimations() {
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
@@ -41,485 +130,579 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       vsync: this,
       duration: const Duration(milliseconds: 400),
     );
-
-    fetchPositions();
-    timer = Timer.periodic(const Duration(seconds: 5), (Timer t) {
-      fetchPositions();
-    });
   }
 
-  @override
-  void dispose() {
-    timer?.cancel();
-    _pulseController.dispose();
-    _slideUpController.dispose();
-    super.dispose();
-  }
-
-  Future<void> fetchPositions() async {
-    if (widget.orderId == null) {
-      setState(() => isLoading = false);
-      return;
-    }
-
+  Future<void> _safeInit() async {
     try {
-      final url = Uri.parse(
-        'http://127.0.0.1:8000/api/orders/${widget.orderId}/positions/',
-      );
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (!mounted) return;
-
+      await _fetchOrderDetails();
+      await _initWebSocket();
+    } catch (e) {
+      debugPrint('❌ Erreur init: $e');
+      if (mounted) {
         setState(() {
-          restaurantPos = LatLng(
-            data['restaurant']['lat'],
-            data['restaurant']['lng'],
-          );
-          clientPos = LatLng(data['client']['lat'], data['client']['lng']);
-          deliveryPos = LatLng(data['livreur']['lat'], data['livreur']['lng']);
+          errorMessage = 'Erreur de chargement des données';
           isLoading = false;
         });
-      } else {
-        debugPrint('Erreur API: ${response.statusCode}');
-        setState(() => isLoading = false);
       }
+    }
+  }
+
+  // ========== WEBSOCKET ==========
+
+  Future<void> _initWebSocket() async {
+    try {
+      _wsService = WebSocketService();
+      _trackingService = LocationTrackingService();
+
+      // Connexion WebSocket
+      await _wsService!.connect().timeout(
+        const Duration(seconds: 10),
+        onTimeout: () => throw TimeoutException('WebSocket timeout'),
+      );
+      _wsService!.joinOrderRoom(widget.orderId);
+
+      _wsSubscription = _wsService!.messageStream.listen(
+        (data) {
+          try {
+            final event = WebSocketEvent.fromJson(data);
+            _handleWebSocketEvent(event);
+          } catch (e) {
+            debugPrint('⚠️ Parsing event: $e');
+          }
+        },
+        onError: (error) =>
+            _showErrorNotification('Connexion temps réel interrompue'),
+        cancelOnError: false,
+      );
+
+      // Tracking GPS
+      await _trackingService!
+          .connectToOrder(widget.orderId)
+          .timeout(
+            const Duration(seconds: 10),
+            onTimeout: () => throw TimeoutException('Tracking timeout'),
+          );
+
+      _trackingSubscription = _trackingService!.locationStream.listen(
+        (data) {
+          try {
+            if (data['type'] == 'location_update' &&
+                data['user_role'] == 'livreur' &&
+                data['latitude'] != null &&
+                data['longitude'] != null) {
+              if (mounted) {
+                setState(() {
+                  deliveryPos = LatLng(
+                    (data['latitude'] as num).toDouble(),
+                    (data['longitude'] as num).toDouble(),
+                  );
+                });
+              }
+            }
+          } catch (e) {
+            debugPrint('⚠️ Location update error: $e');
+          }
+        },
+        onError: (error) => debugPrint('❌ Tracking stream error: $error'),
+        cancelOnError: false,
+      );
+
+      debugPrint('✅ WebSocket initialisé pour #${widget.orderId}');
     } catch (e) {
-      debugPrint('Erreur fetchPositions: $e');
-      setState(() => isLoading = false);
+      debugPrint('❌ WebSocket init error: $e');
+      _showErrorNotification('Mode hors ligne - mise à jour limitée');
     }
   }
 
-  double calculateDistance(LatLng start, LatLng end) {
-    final Distance distance = Distance();
-    return distance.as(LengthUnit.Meter, start, end);
+  void _handleWebSocketEvent(WebSocketEvent event) {
+    if (event.orderId != widget.orderId) return;
+
+    switch (event.type) {
+      case WebSocketEventType.orderStatusChanged:
+        if (event.newStatus != null) {
+          setState(() => orderStatus = event.newStatus!);
+          _showNotification(
+            event.message ?? 'Statut mis à jour: ${_getStatusLabel()}',
+          );
+        }
+        break;
+      case WebSocketEventType.orderAssigned:
+        setState(() => orderStatus = 'picked');
+        final livreurName = event.eventData?['livreur_name'] as String?;
+        _showNotification(
+          livreurName != null
+              ? '$livreurName va livrer votre commande'
+              : 'Un livreur a pris en charge votre commande',
+        );
+        break;
+      case WebSocketEventType.orderDelivered:
+        setState(() => orderStatus = 'delivered');
+        _showDeliveredDialog();
+        break;
+      case WebSocketEventType.locationUpdated:
+        break;
+    }
   }
 
-  String _getDeliveryStatus() {
-    final distToRestaurant = calculateDistance(deliveryPos, restaurantPos);
-    final distToClient = calculateDistance(deliveryPos, clientPos);
+  // ========== API CALLS ==========
 
-    if (distToRestaurant < 50) {
-      return "Récupération en cours";
-    } else if (distToClient < 50) {
-      return "Livraison imminente";
-    } else if (distToRestaurant < distToClient) {
-      return "En route vers le restaurant";
-    } else {
-      return "En cours de livraison";
+  Future<void> _fetchOrderDetails() async {
+    try {
+      final positions = await ApiService.getOrderPositions(
+        widget.orderId,
+      ).timeout(const Duration(seconds: 15));
+
+      final details = await ApiService.getOrderDetails(
+        widget.orderId,
+      ).timeout(const Duration(seconds: 15));
+
+      if (!mounted) return;
+
+      if (positions['restaurant'] == null || positions['client'] == null) {
+        throw Exception('Données de position incomplètes');
+      }
+
+      setState(() {
+        restaurantPos = LatLng(
+          (positions['restaurant']['lat'] as num).toDouble(),
+          (positions['restaurant']['lng'] as num).toDouble(),
+        );
+        clientPos = LatLng(
+          (positions['client']['lat'] as num).toDouble(),
+          (positions['client']['lng'] as num).toDouble(),
+        );
+        if (positions['livreur'] != null) {
+          deliveryPos = LatLng(
+            (positions['livreur']['lat'] as num).toDouble(),
+            (positions['livreur']['lng'] as num).toDouble(),
+          );
+        }
+        orderData = details;
+        orderStatus = details['status']?.toString() ?? 'pending';
+        isLoading = false;
+        errorMessage = null;
+      });
+
+      debugPrint('✅ Commande #${widget.orderId} chargée');
+    } catch (e) {
+      debugPrint('❌ Fetch order error: $e');
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          errorMessage = e is TimeoutException
+              ? 'Délai de connexion dépassé'
+              : 'Impossible de charger les données';
+        });
+      }
     }
+  }
+
+  // ========== NOTIFICATIONS ==========
+
+  void _showNotification(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.notifications_active,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(message, style: const TextStyle(fontSize: 14)),
+            ),
+          ],
+        ),
+        backgroundColor: const Color(0xFF00D9B1),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 3),
+        margin: EdgeInsets.only(bottom: 35.h, left: 4.w, right: 4.w),
+      ),
+    );
+  }
+
+  void _showErrorNotification(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.warning_amber_rounded,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(message, style: const TextStyle(fontSize: 14)),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 4),
+        margin: EdgeInsets.only(bottom: 35.h, left: 4.w, right: 4.w),
+      ),
+    );
+  }
+
+  void _showDeliveredDialog() {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(24),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                color: Color(0xFF00D9B1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.check_circle_rounded,
+                color: Colors.white,
+                size: 56,
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Commande livrée !',
+              style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Votre commande a été livrée avec succès. Bon appétit ! 🎉',
+              style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  Navigator.of(context).pop();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00D9B1),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  'Fermer',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ========== HELPER METHODS ==========
+
+  String _getStatusLabel() {
+    const statusLabels = {
+      'pending': 'En attente',
+      'accepted': 'Acceptée',
+      'preparing': 'En préparation',
+      'ready': 'Prête',
+      'picked': 'Prise en charge',
+      'in_transit': 'En cours de livraison',
+      'delivered': 'Livrée',
+      'cancelled': 'Annulée',
+    };
+    return statusLabels[orderStatus] ?? 'En cours';
   }
 
   int _getCurrentStep() {
-    final distToRestaurant = calculateDistance(deliveryPos, restaurantPos);
-    final distToClient = calculateDistance(deliveryPos, clientPos);
-
-    if (distToRestaurant < 50) return 1;
-    if (distToRestaurant < distToClient) return 1;
-    if (distToClient < 50) return 3;
-    return 2;
+    const steps = {
+      'pending': 0,
+      'accepted': 0,
+      'preparing': 1,
+      'ready': 1,
+      'picked': 2,
+      'in_transit': 2,
+      'delivered': 3,
+    };
+    return steps[orderStatus] ?? 0;
   }
+
+  void _recenterMap() {
+    final center = deliveryPos ?? restaurantPos ?? clientPos;
+    if (center != null) {
+      _mapController.move(center, 14.5);
+      _showNotification('Carte recentrée');
+    }
+  }
+
+  double _calculateDistance(LatLng start, LatLng end) {
+    final distance = Distance();
+    return distance.as(LengthUnit.Meter, start, end);
+  }
+
+  String _formatDistance(double meters) {
+    if (meters >= 1000) return "${(meters / 1000).toStringAsFixed(1)} km";
+    return "${meters.toStringAsFixed(0)} m";
+  }
+
+  String _estimateTime() {
+    if (deliveryPos == null || clientPos == null) return "...";
+    final distance = _calculateDistance(deliveryPos!, clientPos!);
+    final minutes = (distance / 666).ceil();
+    if (minutes < 1) return "< 1 min";
+    if (minutes > 60) return "${(minutes / 60).floor()}h ${minutes % 60}min";
+    return "$minutes min";
+  }
+
+  // ========== BUILD METHOD ==========
 
   @override
   Widget build(BuildContext context) {
-    final livreurDistanceToClient = calculateDistance(deliveryPos, clientPos);
-    final livreurDistanceToRestaurant = calculateDistance(
-      deliveryPos,
-      restaurantPos,
-    );
+    if (isLoading) return _buildLoading();
+    if (errorMessage != null) return _buildError();
+    return _buildMapScreen();
+  }
 
-    final deliveryStatus = _getDeliveryStatus();
-    final currentStep = _getCurrentStep();
+  // ========== UI BUILDERS ==========
 
-    return Scaffold(
+  Widget _buildLoading() => Scaffold(
+    body: Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(
+            color: Color(0xFF00D9B1),
+            strokeWidth: 3,
+          ),
+          Gap(2.h),
+          Text(
+            'Chargement de votre commande...',
+            style: TextStyle(
+              fontSize: 14.sp,
+              color: Colors.grey[600],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildError() => Scaffold(
+    appBar: AppBar(
       backgroundColor: Colors.white,
+      elevation: 0,
+
+      title: const Text(
+        'Suivi de commande',
+        style: TextStyle(color: Colors.black),
+      ),
+    ),
+    body: Center(
+      child: Padding(
+        padding: EdgeInsets.all(6.w),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                size: 64,
+                color: Colors.red.shade400,
+              ),
+            ),
+            Gap(3.h),
+            Text(
+              errorMessage!,
+              style: TextStyle(
+                fontSize: 16.sp,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            Gap(1.h),
+            Text(
+              'Veuillez vérifier votre connexion internet',
+              style: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+            Gap(4.h),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    isLoading = true;
+                    errorMessage = null;
+                  });
+                  _safeInit();
+                },
+                icon: const Icon(Icons.refresh),
+                label: const Text(
+                  'Réessayer',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00D9B1),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  Widget _buildMapScreen() {
+    final mapCenter =
+        deliveryPos ??
+        restaurantPos ??
+        clientPos ??
+        const LatLng(5.3290, -4.0080);
+    return Scaffold(
       body: Stack(
         children: [
-          // Full screen map
           FlutterMap(
+            mapController: _mapController,
             options: MapOptions(
-              initialCenter: deliveryPos,
+              initialCenter: mapCenter,
               initialZoom: 14.5,
-              maxZoom: 20,
+              minZoom: 10,
+              maxZoom: 18,
             ),
             children: [
               TileLayer(
                 urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                userAgentPackageName: 'com.example.deligood',
+                userAgentPackageName: 'com.deligood.app',
               ),
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: [restaurantPos, deliveryPos, clientPos],
-                    color: const Color(0xFF00D9B1),
-                    strokeWidth: 4,
-                    borderStrokeWidth: 1.5,
-                    borderColor: Colors.white,
-                  ),
-                ],
-              ),
+              if (restaurantPos != null &&
+                  deliveryPos != null &&
+                  clientPos != null)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [restaurantPos!, deliveryPos!, clientPos!],
+                      color: const Color(0xFF00D9B1),
+                      strokeWidth: 4,
+                    ),
+                  ],
+                ),
               MarkerLayer(
                 markers: [
-                  _professionalMarker(
-                    clientPos,
-                    "A",
-                    const Color(0xFF00D9B1),
-                    isDestination: true,
-                  ),
-                  _professionalMarker(
-                    restaurantPos,
-                    "B",
-                    const Color(0xFFFF6B6B),
-                  ),
-                  _deliveryMarker(deliveryPos),
+                  if (clientPos != null)
+                    _buildMarker(
+                      clientPos!,
+                      "Vous",
+                      const Color(0xFF00D9B1),
+                      Icons.home,
+                      true,
+                    ),
+                  if (restaurantPos != null)
+                    _buildMarker(
+                      restaurantPos!,
+                      "Restaurant",
+                      const Color(0xFFFF6B6B),
+                      Icons.restaurant,
+                      false,
+                    ),
+                  if (deliveryPos != null) _buildDeliveryMarker(deliveryPos!),
                 ],
               ),
             ],
           ),
-
-          // Top gradient overlay
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              height: 20.h,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.4),
-                    Colors.transparent,
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Top bar
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: EdgeInsets.all(4.w),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _topButton(Icons.arrow_back, () {
-                      Navigator.pop(context);
-                    }),
-                    _topButton(Icons.more_horiz, () {}),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Recenter button
+          Positioned(top: 0, left: 0, right: 0, child: _buildTopBar()),
           Positioned(
             right: 4.w,
             bottom: isBottomSheetExpanded ? 55.h : 35.h,
-            child: Container(
+            child: _recenterButton(),
+          ),
+          _buildBottomSheet(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopBar() {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.all(4.w),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            _topButton(Icons.arrow_back, () => Navigator.pop(context)),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.h),
               decoration: BoxDecoration(
                 color: Colors.white,
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () {},
-                  customBorder: const CircleBorder(),
-                  child: Padding(
-                    padding: EdgeInsets.all(3.w),
-                    child: Icon(
-                      Icons.my_location_rounded,
-                      color: const Color(0xFF00D9B1),
-                      size: 24,
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF00D9B1),
+                      shape: BoxShape.circle,
                     ),
                   ),
-                ),
+                  Gap(2.w),
+                  Text(
+                    'LIVE',
+                    style: TextStyle(
+                      fontSize: 11.sp,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1A1A1A),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-
-          // Bottom sheet
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: GestureDetector(
-              onVerticalDragUpdate: (details) {
-                if (details.primaryDelta! < -5 && !isBottomSheetExpanded) {
-                  setState(() => isBottomSheetExpanded = true);
-                  _slideUpController.forward();
-                } else if (details.primaryDelta! > 5 && isBottomSheetExpanded) {
-                  setState(() => isBottomSheetExpanded = false);
-                  _slideUpController.reverse();
-                }
-              },
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                height: isBottomSheetExpanded ? 90.h : 32.h,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(28),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 20,
-                      offset: const Offset(0, -5),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  children: [
-                    // Handle
-                    Padding(
-                      padding: EdgeInsets.only(top: 2.h),
-                      child: Container(
-                        width: 12.w,
-                        height: 5,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                    ),
-
-                    Expanded(
-                      child: SingleChildScrollView(
-                        physics: isBottomSheetExpanded
-                            ? const BouncingScrollPhysics()
-                            : const NeverScrollableScrollPhysics(),
-                        padding: EdgeInsets.symmetric(horizontal: 5.w),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Gap(2.h),
-
-                            // Status
-                            Row(
-                              children: [
-                                ScaleTransition(
-                                  scale: Tween<double>(begin: 1.0, end: 1.15)
-                                      .animate(_pulseController),
-                                  child: Container(
-                                    padding: EdgeInsets.all(1.5.w),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF00D9B1)
-                                          .withOpacity(0.15),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Container(
-                                      width: 10,
-                                      height: 10,
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFF00D9B1),
-                                        shape: BoxShape.circle,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Gap(3.w),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        deliveryStatus,
-                                        style: TextStyle(
-                                          fontSize: 18.sp,
-                                          fontWeight: FontWeight.bold,
-                                          color: const Color(0xFF1A1A1A),
-                                          letterSpacing: -0.5,
-                                        ),
-                                      ),
-                                      Gap(0.3.h),
-                                      Text(
-                                        "Commande #${widget.orderId ?? '---'}",
-                                        style: TextStyle(
-                                          fontSize: 11.sp,
-                                          color: Colors.grey.shade600,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: 3.w,
-                                    vertical: 0.8.h,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF00D9B1)
-                                        .withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    _estimateTime(
-                                      currentStep == 1
-                                          ? livreurDistanceToRestaurant
-                                          : livreurDistanceToClient,
-                                    ),
-                                    style: TextStyle(
-                                      fontSize: 11.sp,
-                                      fontWeight: FontWeight.bold,
-                                      color: const Color(0xFF00D9B1),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            Gap(3.h),
-
-                            // Progress steps
-                            _buildProgressSteps(currentStep),
-
-                            Gap(3.h),
-
-                            // Distance info
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _compactInfoCard(
-                                    icon: Icons.restaurant_outlined,
-                                    label: "Restaurant",
-                                    value: _formatDistance(
-                                      livreurDistanceToRestaurant,
-                                    ),
-                                    color: const Color(0xFFFF6B6B),
-                                  ),
-                                ),
-                                Gap(3.w),
-                                Expanded(
-                                  child: _compactInfoCard(
-                                    icon: Icons.location_on_outlined,
-                                    label: "Destination",
-                                    value: _formatDistance(
-                                      livreurDistanceToClient,
-                                    ),
-                                    color: const Color(0xFF00D9B1),
-                                  ),
-                                ),
-                              ],
-                            ),
-
-                            if (isBottomSheetExpanded) ...[
-                              Gap(3.h),
-
-                              // Additional details
-                              _sectionTitle("Détails de la livraison"),
-                              Gap(1.5.h),
-
-                              _detailRow(
-                                Icons.person_outline,
-                                "Livreur",
-                                "Jean Kouassi",
-                              ),
-                              Gap(1.h),
-                              _detailRow(
-                                Icons.phone_outlined,
-                                "Contact",
-                                "+225 07 XX XX XX XX",
-                              ),
-                              Gap(1.h),
-                              _detailRow(
-                                Icons.delivery_dining_outlined,
-                                "Véhicule",
-                                "Moto - ABC 1234",
-                              ),
-
-                              Gap(3.h),
-
-                              _sectionTitle("Adresses"),
-                              Gap(1.5.h),
-
-                              _addressCard(
-                                icon: Icons.store_outlined,
-                                title: "Restaurant",
-                                address: "Rue du Commerce, Plateau",
-                                color: const Color(0xFFFF6B6B),
-                              ),
-                              Gap(1.5.h),
-                              _addressCard(
-                                icon: Icons.home_outlined,
-                                title: "Livraison",
-                                address: "Avenue 7, Cocody",
-                                color: const Color(0xFF00D9B1),
-                              ),
-
-                              Gap(3.h),
-
-                              // Action buttons
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _actionButton(
-                                      icon: Icons.phone,
-                                      label: "Appeler",
-                                      onTap: () {},
-                                      isPrimary: false,
-                                    ),
-                                  ),
-                                  Gap(3.w),
-                                  Expanded(
-                                    child: _actionButton(
-                                      icon: Icons.chat_bubble_outline,
-                                      label: "Message",
-                                      onTap: () {},
-                                      isPrimary: true,
-                                    ),
-                                  ),
-                                ],
-                              ),
-
-                              Gap(3.h),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // Loading
-          if (isLoading)
-            Container(
-              color: Colors.black.withOpacity(0.5),
-              child: Center(
-                child: Container(
-                  padding: EdgeInsets.all(6.w),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00D9B1)),
-                  ),
-                ),
-              ),
-            ),
-        ],
+            _topButton(Icons.refresh, () {
+              _fetchOrderDetails();
+              _showNotification('Actualisation...');
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -544,109 +727,182 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           customBorder: const CircleBorder(),
           child: Padding(
             padding: EdgeInsets.all(2.5.w),
-            child: Icon(icon, color: const Color(0xFF1A1A1A), size: 24),
+            child: Icon(icon, size: 24, color: Colors.black87),
           ),
         ),
       ),
     );
   }
 
-  Marker _professionalMarker(
-    LatLng pos,
-    String label,
-    Color color, {
-    bool isDestination = false,
-  }) {
-    return Marker(
-      point: pos,
-      width: 60,
-      height: 60,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Pulse effect
-          if (isDestination)
-            ScaleTransition(
-              scale: Tween<double>(begin: 1.0, end: 1.5).animate(
-                CurvedAnimation(
-                  parent: _pulseController,
-                  curve: Curves.easeOut,
-                ),
-              ),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.2),
-                  shape: BoxShape.circle,
-                ),
-              ),
-            ),
-          // Marker
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Center(
-              child: Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: color,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ),
+  Widget _recenterButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _recenterMap,
+          customBorder: const CircleBorder(),
+          child: Padding(
+            padding: EdgeInsets.all(3.w),
+            child: const Icon(
+              Icons.my_location_rounded,
+              color: Color(0xFF00D9B1),
+              size: 24,
+            ),
+          ),
+        ),
+      ),
     );
   }
 
-  Marker _deliveryMarker(LatLng pos) {
-    return Marker(
-      point: pos,
-      width: 50,
-      height: 50,
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFF1A1A1A),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.3),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: const Icon(
-          Icons.delivery_dining,
-          color: Colors.white,
-          size: 24,
+  Widget _buildBottomSheet() {
+    final currentStep = _getCurrentStep();
+    return Positioned(
+      left: 0,
+      right: 0,
+      bottom: 0,
+      child: GestureDetector(
+        onVerticalDragUpdate: (details) {
+          if (details.primaryDelta! < -5 && !isBottomSheetExpanded) {
+            setState(() => isBottomSheetExpanded = true);
+            _slideUpController.forward();
+          } else if (details.primaryDelta! > 5 && isBottomSheetExpanded) {
+            setState(() => isBottomSheetExpanded = false);
+            _slideUpController.reverse();
+          }
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          height: isBottomSheetExpanded ? 90.h : 32.h,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.1),
+                blurRadius: 20,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: 2.h),
+                child: Container(
+                  width: 12.w,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: isBottomSheetExpanded
+                      ? const BouncingScrollPhysics()
+                      : const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.symmetric(horizontal: 5.w),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Gap(2.h),
+                      _buildStatusHeader(),
+                      Gap(3.h),
+                      _buildProgressSteps(currentStep),
+                      Gap(3.h),
+                      _buildDistanceInfo(),
+                      if (isBottomSheetExpanded) ...[
+                        Gap(3.h),
+                        _buildOrderDetails(),
+                        Gap(3.h),
+                        _buildActionButtons(),
+                        Gap(3.h),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _buildStatusHeader() {
+    return Row(
+      children: [
+        ScaleTransition(
+          scale: Tween<double>(begin: 1.0, end: 1.15).animate(_pulseController),
+          child: Container(
+            padding: EdgeInsets.all(1.5.w),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00D9B1).withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Container(
+              width: 10,
+              height: 10,
+              decoration: const BoxDecoration(
+                color: Color(0xFF00D9B1),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+        ),
+        Gap(3.w),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _getStatusLabel(),
+                style: TextStyle(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF1A1A1A),
+                ),
+              ),
+              Text(
+                'Commande #${widget.orderId}',
+                style: TextStyle(
+                  fontSize: 11.sp,
+                  color: Colors.grey.shade600,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 0.8.h),
+          decoration: BoxDecoration(
+            color: const Color(0xFF00D9B1).withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            _estimateTime(),
+            style: TextStyle(
+              fontSize: 11.sp,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF00D9B1),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -659,85 +915,44 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       ),
       child: Row(
         children: [
-          _progressStep(
-            number: 1,
-            title: "Récupération",
-            isActive: currentStep >= 1,
-            isCompleted: currentStep > 1,
-          ),
-          Expanded(
-            child: Container(
-              height: 2,
-              margin: EdgeInsets.symmetric(horizontal: 2.w),
-              color: currentStep > 1
-                  ? const Color(0xFF00D9B1)
-                  : Colors.grey.shade300,
-            ),
-          ),
-          _progressStep(
-            number: 2,
-            title: "En route",
-            isActive: currentStep >= 2,
-            isCompleted: currentStep > 2,
-          ),
-          Expanded(
-            child: Container(
-              height: 2,
-              margin: EdgeInsets.symmetric(horizontal: 2.w),
-              color: currentStep > 2
-                  ? const Color(0xFF00D9B1)
-                  : Colors.grey.shade300,
-            ),
-          ),
-          _progressStep(
-            number: 3,
-            title: "Livraison",
-            isActive: currentStep >= 3,
-            isCompleted: false,
-          ),
+          _progressStep(1, "Préparation", currentStep >= 1, currentStep > 1),
+          Expanded(child: _stepLine(currentStep > 1)),
+          _progressStep(2, "En route", currentStep >= 2, currentStep > 2),
+          Expanded(child: _stepLine(currentStep > 2)),
+          _progressStep(3, "Livraison", currentStep >= 3, false),
         ],
       ),
     );
   }
 
-  Widget _progressStep({
-    required int number,
-    required String title,
-    required bool isActive,
-    required bool isCompleted,
-  }) {
+  Widget _progressStep(
+    int number,
+    String title,
+    bool isActive,
+    bool isCompleted,
+  ) {
     return Column(
       children: [
         Container(
           width: 32,
           height: 32,
           decoration: BoxDecoration(
-            color: isActive
-                ? const Color(0xFF00D9B1)
-                : Colors.white,
+            color: isActive ? const Color(0xFF00D9B1) : Colors.white,
             shape: BoxShape.circle,
             border: Border.all(
-              color: isActive
-                  ? const Color(0xFF00D9B1)
-                  : Colors.grey.shade300,
+              color: isActive ? const Color(0xFF00D9B1) : Colors.grey.shade300,
               width: 2,
             ),
           ),
           child: Center(
             child: isCompleted
-                ? const Icon(
-                    Icons.check,
-                    color: Colors.white,
-                    size: 18,
-                  )
+                ? const Icon(Icons.check, color: Colors.white, size: 18)
                 : Text(
                     '$number',
                     style: TextStyle(
-                      color: isActive
-                          ? Colors.white
-                          : Colors.grey.shade400,
+                      color: isActive ? Colors.white : Colors.grey.shade400,
                       fontWeight: FontWeight.bold,
-                      fontSize: 13.sp,
+                      fontSize: 14,
                     ),
                   ),
           ),
@@ -748,21 +963,53 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           style: TextStyle(
             fontSize: 9.sp,
             fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-            color: isActive
-                ? const Color(0xFF1A1A1A)
-                : Colors.grey.shade500,
+            color: isActive ? const Color(0xFF1A1A1A) : Colors.grey.shade500,
           ),
         ),
       ],
     );
   }
 
-  Widget _compactInfoCard({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
+  Widget _stepLine(bool isActive) {
+    return Container(
+      height: 2,
+      margin: EdgeInsets.symmetric(horizontal: 2.w),
+      color: isActive ? const Color(0xFF00D9B1) : Colors.grey.shade300,
+    );
+  }
+
+  Widget _buildDistanceInfo() {
+    if (deliveryPos == null || clientPos == null || restaurantPos == null)
+      return const SizedBox.shrink();
+    final distanceToClient = _calculateDistance(deliveryPos!, clientPos!);
+    final distanceToRestaurant = _calculateDistance(
+      deliveryPos!,
+      restaurantPos!,
+    );
+    return Row(
+      children: [
+        Expanded(
+          child: _infoCard(
+            Icons.restaurant_outlined,
+            "Restaurant",
+            _formatDistance(distanceToRestaurant),
+            const Color(0xFFFF6B6B),
+          ),
+        ),
+        Gap(3.w),
+        Expanded(
+          child: _infoCard(
+            Icons.location_on_outlined,
+            "Destination",
+            _formatDistance(distanceToClient),
+            const Color(0xFF00D9B1),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoCard(IconData icon, String label, String value, Color color) {
     return Container(
       padding: EdgeInsets.all(3.w),
       decoration: BoxDecoration(
@@ -781,7 +1028,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Text(
                   label,
                   style: TextStyle(
-                    fontSize: 13.sp,
+                    fontSize: 10.sp,
                     color: Colors.grey.shade600,
                     fontWeight: FontWeight.w500,
                   ),
@@ -789,7 +1036,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 Text(
                   value,
                   style: TextStyle(
-                    fontSize: 13.sp,
+                    fontSize: 12.sp,
                     fontWeight: FontWeight.bold,
                     color: const Color(0xFF1A1A1A),
                   ),
@@ -802,14 +1049,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  Widget _sectionTitle(String title) {
-    return Text(
-      title,
-      style: TextStyle(
-        fontSize: 14.sp,
-        fontWeight: FontWeight.bold,
-        color: const Color(0xFF1A1A1A),
-      ),
+  Widget _buildOrderDetails() {
+    if (orderData == null) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Détails de la commande',
+          style: TextStyle(
+            fontSize: 14.sp,
+            fontWeight: FontWeight.bold,
+            color: const Color(0xFF1A1A1A),
+          ),
+        ),
+        Gap(1.5.h),
+        Container(
+          padding: EdgeInsets.all(3.w),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            children: [
+              _detailRow(
+                Icons.restaurant,
+                'Restaurant',
+                orderData!['restaurant_name']?.toString() ?? 'N/A',
+              ),
+              Gap(1.h),
+              Divider(color: Colors.grey.shade300, height: 1),
+              Gap(1.h),
+              _detailRow(
+                Icons.attach_money,
+                'Total',
+                '${orderData!['total_price'] ?? 0} FCFA',
+              ),
+              Gap(1.h),
+              Divider(color: Colors.grey.shade300, height: 1),
+              Gap(1.h),
+              _detailRow(
+                Icons.location_on,
+                'Adresse',
+                orderData!['address']?.toString() ?? 'N/A',
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -820,81 +1107,54 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         Gap(3.w),
         Text(
           label,
-          style: TextStyle(
-            fontSize: 11.sp,
-            color: Colors.grey.shade600,
-          ),
+          style: TextStyle(fontSize: 11.sp, color: Colors.grey.shade600),
         ),
         const Spacer(),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 11.sp,
-            fontWeight: FontWeight.w600,
-            color: const Color(0xFF1A1A1A),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 11.sp,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF1A1A1A),
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
     );
   }
 
-  Widget _addressCard({
-    required IconData icon,
-    required String title,
-    required String address,
-    required Color color,
-  }) {
-    return Container(
-      padding: EdgeInsets.all(3.w),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(2.w),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: color, size: 20),
+  Widget _buildActionButtons() {
+    return Row(
+      children: [
+        Expanded(
+          child: _actionButton(
+            Icons.phone,
+            'Appeler',
+            () => _showNotification('Fonction appel bientôt disponible'),
+            isPrimary: false,
           ),
-          Gap(3.w),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 10.sp,
-                    color: Colors.grey.shade600,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                Gap(0.3.h),
-                Text(
-                  address,
-                  style: TextStyle(
-                    fontSize: 11.sp,
-                    fontWeight: FontWeight.w600,
-                    color: const Color(0xFF1A1A1A),
-                  ),
-                ),
-              ],
-            ),
+        ),
+        Gap(3.w),
+        Expanded(
+          child: _actionButton(
+            Icons.chat_bubble_outline,
+            'Message',
+            () => _showNotification('Fonction message bientôt disponible'),
+            isPrimary: true,
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
-  Widget _actionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
+  Widget _actionButton(
+    IconData icon,
+    String label,
+    VoidCallback onTap, {
     required bool isPrimary,
   }) {
     return Material(
@@ -907,16 +1167,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           padding: EdgeInsets.symmetric(vertical: 1.8.h),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(12),
-            border: isPrimary
-                ? null
-                : Border.all(color: Colors.grey.shade300),
+            border: isPrimary ? null : Border.all(color: Colors.grey.shade300),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 icon,
-                color: isPrimary ? Colors.white : const Color(0xFF1A1A1A),
+                color: isPrimary ? Colors.white : Colors.black,
                 size: 20,
               ),
               Gap(2.w),
@@ -925,7 +1183,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 style: TextStyle(
                   fontSize: 14.sp,
                   fontWeight: FontWeight.w600,
-                  color: isPrimary ? Colors.white : const Color(0xFF1A1A1A),
+                  color: isPrimary ? Colors.white : Colors.black,
                 ),
               ),
             ],
@@ -935,17 +1193,39 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     );
   }
 
-  String _formatDistance(double meters) {
-    if (meters >= 1000) {
-      return "${(meters / 1000).toStringAsFixed(1)} km";
-    }
-    return "${meters.toStringAsFixed(0)} m";
+  Marker _buildMarker(
+    LatLng pos,
+    String label,
+    Color color,
+    IconData icon,
+    bool pulsate,
+  ) {
+    return Marker(
+      width: 60,
+      height: 60,
+      point: pos,
+      child: pulsate
+          ? ScaleTransition(
+              scale: Tween(begin: 0.9, end: 1.1).animate(_pulseController),
+              child: Icon(icon, color: color, size: 36),
+            )
+          : Icon(icon, color: color, size: 36),
+    );
   }
 
-  String _estimateTime(double meters) {
-    final minutes = (meters / 666).ceil();
-    if (minutes < 1) return "< 1 min";
-    if (minutes == 1) return "1 min";
-    return "$minutes min";
+  Marker _buildDeliveryMarker(LatLng pos) {
+    return Marker(
+      width: 60,
+      height: 60,
+      point: pos,
+      child: ScaleTransition(
+        scale: Tween(begin: 0.9, end: 1.1).animate(_pulseController),
+        child: const Icon(
+          Icons.delivery_dining_rounded,
+          color: Colors.orange,
+          size: 36,
+        ),
+      ),
+    );
   }
 }

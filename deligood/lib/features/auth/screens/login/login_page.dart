@@ -3,6 +3,7 @@ import 'package:deligood/features/auth/screens/login/forget_password.dart';
 import 'package:deligood/features/auth/screens/register/register_page.dart';
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:sizer/sizer.dart';
@@ -25,6 +26,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   bool obscurePin = true;
   bool isLoading = false;
   String? errorMessage;
+  int? attemptsRemaining;
 
   late AnimationController _fadeController;
   late AnimationController _slideController;
@@ -36,8 +38,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
+    _autoLogin();
+  }
 
-    // Animations
+  void _initializeAnimations() {
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
@@ -65,8 +70,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
     _fadeController.forward();
     _slideController.forward();
-
-    _autoLogin();
   }
 
   @override
@@ -79,24 +82,36 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
+  // =====================================================
+  // AUTO-LOGIN
+  // =====================================================
   Future<void> _autoLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
-    final userType = prefs.getString('user_type');
-    final restaurantId = prefs.getInt('restaurant_id') ?? 0;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      final userType = prefs.getString('user_type');
 
-    debugPrint(
-      "Auto-login check -> token: $token, userType: $userType, restaurantId: $restaurantId",
-    );
+      debugPrint(
+        "Auto-login check -> token: ${token != null ? 'present' : 'null'}, userType: $userType",
+      );
 
-    if (token != null && userType != null && mounted) {
-      Navigator.pushReplacement(context, _createRoute(userType));
+      if (token != null && userType != null && mounted) {
+        Navigator.pushReplacement(context, _createRoute(userType));
+      }
+    } catch (e) {
+      debugPrint("Erreur lors de l'auto-login: $e");
     }
   }
 
+  // =====================================================
+  // LOGIN
+  // =====================================================
   Future<void> _login() async {
-    // Reset error
-    setState(() => errorMessage = null);
+    // Reset error and attempts
+    setState(() {
+      errorMessage = null;
+      attemptsRemaining = null;
+    });
 
     if (!_formKey.currentState!.validate()) {
       _playShakeAnimation();
@@ -104,13 +119,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     }
 
     setState(() => isLoading = true);
-    debugPrint(
-      "Tentative de login avec téléphone: ${phoneController.text}, PIN: ${pinController.text}",
-    );
+
+    final phone = _normalizePhoneNumber(phoneController.text);
+    final pin = pinController.text.trim();
+
+    debugPrint("Tentative de login avec téléphone: $phone");
 
     final url = Uri.parse('http://127.0.0.1:8000/api/users/login/');
-    final phone = phoneController.text.trim();
-    final pin = pinController.text.trim();
 
     try {
       final response = await http
@@ -122,44 +137,29 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           .timeout(
             const Duration(seconds: 10),
             onTimeout: () {
-              throw Exception(
+              throw TimeoutException(
                 'La connexion a expiré. Vérifiez votre connexion internet.',
               );
             },
           );
 
       debugPrint("Réponse serveur status: ${response.statusCode}");
-      debugPrint("Réponse serveur body: ${response.body}");
 
-      final data = jsonDecode(response.body);
+      if (!mounted) return;
 
       if (response.statusCode == 200) {
-        await _saveUserData(data);
-        debugPrint("Login réussi, utilisateur sauvegardé.");
-
-        if (!mounted) return;
-
-        // Success animation
-        _showSuccessDialog();
-
-        await Future.delayed(const Duration(seconds: 2));
-
-        widget.onLoginSuccess(data['user']['user_type'] ?? '');
-        Navigator.pushReplacement(
-          context,
-          _createRoute(data['user']['user_type'] ?? ''),
-        );
+        await _handleSuccessfulLogin(response.body);
       } else {
-        _handleError(data['message'] ?? 'Identifiants incorrects');
+        await _handleFailedLogin(response.body, response.statusCode);
       }
-    } on http.ClientException catch (e) {
+    } on http.ClientException {
       _handleError(
         'Impossible de se connecter au serveur. Vérifiez votre connexion.',
       );
-      debugPrint("ClientException: $e");
-    } on FormatException catch (e) {
+    } on FormatException {
       _handleError('Erreur de format de réponse du serveur');
-      debugPrint("FormatException: $e");
+    } on TimeoutException catch (e) {
+      _handleError(e.message ?? 'Timeout de connexion');
     } catch (e) {
       _handleError('Une erreur inattendue s\'est produite. Réessayez.');
       debugPrint("Exception lors du login: $e");
@@ -168,11 +168,83 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     }
   }
 
+  // =====================================================
+  // HANDLE SUCCESSFUL LOGIN
+  // =====================================================
+  Future<void> _handleSuccessfulLogin(String responseBody) async {
+    try {
+      final data = jsonDecode(responseBody);
+         debugPrint("✅ Réponse login complète: $data"); 
+      await _saveUserData(data);
+      debugPrint("Login réussi, utilisateur sauvegardé.");
+
+      if (!mounted) return;
+
+      _showSuccessDialog();
+      await Future.delayed(const Duration(seconds: 2));
+
+      final userType = data['user']['user_type'] ?? '';
+      widget.onLoginSuccess(userType);
+
+      if (mounted) {
+        Navigator.pushReplacement(context, _createRoute(userType));
+      }
+    } catch (e) {
+      _handleError('Erreur lors de la sauvegarde des données');
+      debugPrint("Erreur handleSuccessfulLogin: $e");
+    }
+  }
+
+  // =====================================================
+  // HANDLE FAILED LOGIN
+  // =====================================================
+  Future<void> _handleFailedLogin(String responseBody, int statusCode) async {
+    try {
+      final data = jsonDecode(responseBody);
+
+      // Extraire le message d'erreur
+      String message = 'Identifiants incorrects';
+      
+      if (data is Map) {
+        // Gérer les erreurs de validation (format DRF)
+        if (data.containsKey('non_field_errors')) {
+          message = data['non_field_errors'] is List
+              ? data['non_field_errors'][0]
+              : data['non_field_errors'].toString();
+        } else if (data.containsKey('detail')) {
+          message = data['detail'].toString();
+        } else if (data.containsKey('message')) {
+          message = data['message'].toString();
+        }
+
+        // Extraire le nombre de tentatives restantes si disponible
+        if (message.contains('tentative')) {
+          final regex = RegExp(r'(\d+)\s+tentative');
+          final match = regex.firstMatch(message);
+          if (match != null) {
+            attemptsRemaining = int.tryParse(match.group(1) ?? '');
+          }
+        }
+      }
+
+      _handleError(message);
+    } catch (e) {
+      debugPrint("Erreur parsing réponse: $e");
+      _handleError('Identifiants incorrects');
+    }
+  }
+
+  // =====================================================
+  // HANDLE ERROR
+  // =====================================================
   void _handleError(String message) {
     setState(() => errorMessage = message);
     _playShakeAnimation();
 
-    // Vibration visuelle
+    // Vibration haptique
+    HapticFeedback.mediumImpact();
+
+    // Snackbar avec design amélioré
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -180,12 +252,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             const Icon(Icons.error_outline, color: Colors.white),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    message,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (attemptsRemaining != null && attemptsRemaining! > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '$attemptsRemaining tentative(s) restante(s)',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -198,13 +286,21 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         action: SnackBarAction(
           label: 'OK',
           textColor: Colors.white,
-          onPressed: () {},
+          onPressed: () {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          },
         ),
       ),
     );
   }
 
+  // =====================================================
+  // SUCCESS DIALOG
+  // =====================================================
   void _showSuccessDialog() {
+    // Vibration haptique de succès
+    HapticFeedback.lightImpact();
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -252,38 +348,64 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
+  // =====================================================
+  // SHAKE ANIMATION
+  // =====================================================
   void _playShakeAnimation() {
     _shakeController.reset();
     _shakeController.forward();
   }
 
+  // =====================================================
+  // SAVE USER DATA
+  // =====================================================
   Future<void> _saveUserData(Map<String, dynamic> data) async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = data['token'];
-    final user = data['user'];
+  final prefs = await SharedPreferences.getInstance();
 
-    if (token == null || user == null) {
-      throw Exception('Réponse invalide du serveur');
-    }
+  // Supporte les deux formats possibles
+  final token = data['token'] ?? data['access'] ?? data['access_token'];
+  final user = data['user'] ?? data;
 
-    await prefs.setString('access_token', token);
-    await prefs.setString('user_type', user['user_type'] ?? '');
-    await prefs.setString('first_name', user['first_name'] ?? '');
-    await prefs.setString('last_name', user['last_name'] ?? '');
-    await prefs.setString('phone_number', user['phone_number'] ?? '');
-    await prefs.setString('locality', user['locality'] ?? '');
+  debugPrint("🔑 Token extrait: $token");
+  debugPrint("👤 User extrait: $user");
 
-    if (user['user_type'] == 'restaurant') {
-      await prefs.setInt('restaurant_id', user['restaurant_id'] ?? 0);
-    } else {
-      await prefs.setInt('restaurant_id', 0);
-    }
-
-    debugPrint(
-      "UserType: ${user['user_type']}, RestaurantId: ${prefs.getInt('restaurant_id')}",
-    );
+  if (token == null) {
+    throw Exception('Token manquant dans la réponse');
   }
 
+  await Future.wait([
+    prefs.setString('access_token', token.toString()),
+    prefs.setString('user_type', (user['user_type'] ?? '').toString()),
+    prefs.setString('first_name', (user['first_name'] ?? '').toString()),
+    prefs.setString('last_name', (user['last_name'] ?? '').toString()),
+    prefs.setString('phone_number', (user['phone_number'] ?? '').toString()),
+    prefs.setString('locality', (user['locality'] ?? '').toString()),
+    prefs.setInt('user_id', user['id'] ?? 0),
+  ]);
+
+  if (user['user_type'] == 'restaurant') {
+    await prefs.setInt('restaurant_id', user['restaurant_id'] ?? 0);
+  } else {
+    await prefs.remove('restaurant_id');
+  }
+
+  debugPrint("✅ Token sauvegardé: ${prefs.getString('access_token')}");
+}
+  // =====================================================
+  // NORMALIZE PHONE NUMBER
+  // =====================================================
+  String _normalizePhoneNumber(String phone) {
+    return phone
+        .trim()
+        .replaceAll(' ', '')
+        .replaceAll('-', '')
+        .replaceAll('(', '')
+        .replaceAll(')', '');
+  }
+
+  // =====================================================
+  // CREATE ROUTE
+  // =====================================================
   Route _createRoute(String userType) {
     return PageRouteBuilder(
       pageBuilder: (_, __, ___) =>
@@ -295,9 +417,13 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         ).chain(CurveTween(curve: Curves.easeInOut));
         return SlideTransition(position: animation.drive(tween), child: child);
       },
+      transitionDuration: const Duration(milliseconds: 300),
     );
   }
 
+  // =====================================================
+  // BUILD UI
+  // =====================================================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -321,110 +447,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      // Logo section
                       _buildLogo(),
-
                       SizedBox(height: 6.h),
-
-                      // Login Card
-                      Container(
-                        padding: EdgeInsets.all(6.w),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(24),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 30,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Bienvenue !',
-                              style: TextStyle(
-                                fontSize: 24.sp,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFF2D3142),
-                              ),
-                            ),
-                            SizedBox(height: 1.h),
-                            Text(
-                              'Connectez-vous pour continuer',
-                              style: TextStyle(
-                                fontSize: 12.sp,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-
-                            SizedBox(height: 4.h),
-
-                            // Error message
-                            if (errorMessage != null) ...[
-                              _buildErrorBanner(),
-                              SizedBox(height: 2.h),
-                            ],
-
-                            // Form
-                            Form(
-                              key: _formKey,
-                              child: Column(
-                                children: [
-                                  _buildModernTextField(
-                                    controller: phoneController,
-                                    label: 'Numéro de téléphone',
-                                    icon: Icons.phone,
-                                    obscure: false,
-                                  ),
-                                  SizedBox(height: 2.h),
-                                  _buildModernTextField(
-                                    controller: pinController,
-                                    label: 'Code PIN',
-                                    icon: Icons.lock,
-                                    obscure: true,
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            SizedBox(height: 3.h),
-
-                            // Login button
-                            _buildLoginButton(),
-
-                            SizedBox(height: 2.h),
-
-                            // Forgot password
-                            Center(
-                              child: TextButton(
-                                onPressed: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => const ForgetPasswordPage(),
-                                  ),
-                                ),
-                                child: Text(
-                                  'Mot de passe oublié ?',
-                                  style: TextStyle(
-                                    fontSize: 12.sp,
-                                    color: const Color(0xFFFF6B35),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
+                      _buildLoginCard(),
                       SizedBox(height: 3.h),
-
-                      // Register section
                       _buildRegisterSection(),
-
                       SizedBox(height: 2.h),
                     ],
                   ),
@@ -437,26 +464,32 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
+  // =====================================================
+  // LOGO
+  // =====================================================
   Widget _buildLogo() {
     return Column(
       children: [
-        Container(
-          padding: EdgeInsets.all(5.w),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 20,
-                spreadRadius: 5,
-              ),
-            ],
-          ),
-          child: Icon(
-            Icons.delivery_dining,
-            size: 18.w,
-            color: const Color(0xFFFF6B35),
+        Hero(
+          tag: 'app_logo',
+          child: Container(
+            padding: EdgeInsets.all(5.w),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.1),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.delivery_dining,
+              size: 18.w,
+              color: const Color(0xFFFF6B35),
+            ),
           ),
         ),
         SizedBox(height: 2.h),
@@ -480,7 +513,7 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
         Text(
           'Livraison rapide et fiable',
           style: TextStyle(
-            fontSize: 4.sp,
+            fontSize: 14.sp,
             color: Colors.white.withOpacity(0.9),
             fontWeight: FontWeight.w500,
           ),
@@ -489,6 +522,93 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
+  // =====================================================
+  // LOGIN CARD
+  // =====================================================
+  Widget _buildLoginCard() {
+    return Container(
+      padding: EdgeInsets.all(6.w),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Bienvenue !',
+            style: TextStyle(
+              fontSize: 24.sp,
+              fontWeight: FontWeight.bold,
+              color: const Color(0xFF2D3142),
+            ),
+          ),
+          SizedBox(height: 1.h),
+          Text(
+            'Connectez-vous pour continuer',
+            style: TextStyle(
+              fontSize: 12.sp,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          SizedBox(height: 4.h),
+
+          // Error banner
+          if (errorMessage != null) ...[
+            _buildErrorBanner(),
+            SizedBox(height: 2.h),
+          ],
+
+          // Form
+          Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                _buildPhoneField(),
+                SizedBox(height: 2.h),
+                _buildPinField(),
+              ],
+            ),
+          ),
+
+          SizedBox(height: 3.h),
+          _buildLoginButton(),
+          SizedBox(height: 2.h),
+
+          // Forgot password
+          Center(
+            child: TextButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ForgetPasswordPage(),
+                ),
+              ),
+              child: Text(
+                'Code PIN oublié ?',
+                style: TextStyle(
+                  fontSize: 12.sp,
+                  color: const Color(0xFFFF6B35),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =====================================================
+  // ERROR BANNER
+  // =====================================================
   Widget _buildErrorBanner() {
     return AnimatedBuilder(
       animation: _shakeController,
@@ -511,13 +631,29 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
             const Icon(Icons.error_outline, color: Color(0xFFE53935), size: 24),
             SizedBox(width: 3.w),
             Expanded(
-              child: Text(
-                errorMessage!,
-                style: TextStyle(
-                  fontSize: 11.sp,
-                  color: const Color(0xFFE53935),
-                  fontWeight: FontWeight.w600,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    errorMessage!,
+                    style: TextStyle(
+                      fontSize: 11.sp,
+                      color: const Color(0xFFE53935),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (attemptsRemaining != null && attemptsRemaining! > 0) ...[
+                    SizedBox(height: 0.5.h),
+                    Text(
+                      '$attemptsRemaining tentative(s) restante(s)',
+                      style: TextStyle(
+                        fontSize: 10.sp,
+                        color: const Color(0xFFE53935),
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
@@ -526,26 +662,28 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildModernTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    required bool obscure,
-  }) {
+  // =====================================================
+  // PHONE FIELD
+  // =====================================================
+  Widget _buildPhoneField() {
     return TextFormField(
-      controller: controller,
-      obscureText: obscure && controller == pinController ? obscurePin : false,
-      maxLength: obscure ? 4 : null,
+      controller: phoneController,
+      keyboardType: TextInputType.phone,
       style: TextStyle(
         fontSize: 14.sp,
         fontWeight: FontWeight.w500,
         color: const Color(0xFF2D3142),
       ),
+      inputFormatters: [
+        // Limiter les caractères autorisés
+        FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s()]')),
+      ],
       decoration: InputDecoration(
-        labelText: label,
-        counterText: '',
-        prefixIcon: Icon(icon, color: const Color(0xFFFF6B35)),
+        labelText: 'Numéro de téléphone',
+        hintText: '+225 XX XX XX XX XX',
+        prefixIcon: const Icon(Icons.phone, color: Color(0xFFFF6B35)),
         labelStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600),
+        hintStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade400),
         filled: true,
         fillColor: Colors.grey.shade50,
         border: OutlineInputBorder(
@@ -568,26 +706,92 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
         ),
-        suffixIcon: obscure
-            ? IconButton(
-                icon: Icon(
-                  obscurePin ? Icons.visibility_off : Icons.visibility,
-                  color: Colors.grey.shade600,
-                ),
-                onPressed: () => setState(() => obscurePin = !obscurePin),
-              )
-            : null,
         contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
       ),
       validator: (v) {
-        if (v == null || v.isEmpty) return '$label requis';
-        if (obscure && v.length != 4) return 'Le PIN doit contenir 4 chiffres';
-        if (!obscure && v.length < 8) return 'Numéro de téléphone invalide';
+        if (v == null || v.isEmpty) {
+          return 'Numéro de téléphone requis';
+        }
+        final normalized = _normalizePhoneNumber(v);
+        if (normalized.length < 8) {
+          return 'Numéro de téléphone invalide';
+        }
         return null;
       },
     );
   }
 
+  // =====================================================
+  // PIN FIELD
+  // =====================================================
+  Widget _buildPinField() {
+    return TextFormField(
+      controller: pinController,
+      obscureText: obscurePin,
+      keyboardType: TextInputType.number,
+      maxLength: 6,
+      style: TextStyle(
+        fontSize: 14.sp,
+        fontWeight: FontWeight.w500,
+        color: const Color(0xFF2D3142),
+        letterSpacing: 8,
+      ),
+      inputFormatters: [
+        FilteringTextInputFormatter.digitsOnly,
+      ],
+      decoration: InputDecoration(
+        labelText: 'Code PIN',
+        hintText: '••••',
+        counterText: '',
+        prefixIcon: const Icon(Icons.lock, color: Color(0xFFFF6B35)),
+        labelStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600),
+        hintStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade400),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFFF6B35), width: 2),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
+        ),
+        suffixIcon: IconButton(
+          icon: Icon(
+            obscurePin ? Icons.visibility_off : Icons.visibility,
+            color: Colors.grey.shade600,
+          ),
+          onPressed: () => setState(() => obscurePin = !obscurePin),
+        ),
+        contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
+      ),
+      validator: (v) {
+        if (v == null || v.isEmpty) {
+          return 'Code PIN requis';
+        }
+        if (v.length < 4 || v.length > 6) {
+          return 'Le PIN doit contenir 4 à 6 chiffres';
+        }
+        return null;
+      },
+    );
+  }
+
+  // =====================================================
+  // LOGIN BUTTON
+  // =====================================================
   Widget _buildLoginButton() {
     return SizedBox(
       width: double.infinity,
@@ -636,6 +840,9 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     );
   }
 
+  // =====================================================
+  // REGISTER SECTION
+  // =====================================================
   Widget _buildRegisterSection() {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
@@ -679,4 +886,12 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       ),
     );
   }
+}
+
+// =====================================================
+// CUSTOM EXCEPTIONS
+// =====================================================
+class TimeoutException implements Exception {
+  final String? message;
+  TimeoutException(this.message);
 }
