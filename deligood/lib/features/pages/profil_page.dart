@@ -3,17 +3,16 @@ import 'dart:typed_data';
 
 import 'package:deligood/core/api/profile_api.dart';
 import 'package:deligood/core/utils/image_utils.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/pages/wallet_page.dart';
 import 'package:deligood/features/pages/info_perso.dart';
 import 'package:deligood/features/auth/widgets/logout.dart';
 
-// 🎨 DESIGN SYSTEM
 const kOrange = Color(0xFFFF6B35);
 const kTeal = Color(0xFF00CCBC);
 const kBg = Color(0xFFF7F3EF);
@@ -47,23 +46,20 @@ class _ProfilePageState extends State<ProfilePage>
   @override
   void initState() {
     super.initState();
-
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
-
     _fadeAnim = CurvedAnimation(
       parent: _fadeController,
       curve: Curves.easeOut,
     );
-
     _init();
   }
 
   Future<void> _init() async {
     await _loadUser();
-    await _fetchProfileFromApi();
+    await _fetchProfile();
     _fadeController.forward();
   }
 
@@ -74,40 +70,78 @@ class _ProfilePageState extends State<ProfilePage>
   }
 
   // ================= DATA =================
+
   Future<void> _loadUser() async {
-    final prefs = await SharedPreferences.getInstance();
-    final avatarBase64 = prefs.getString('avatar_base64');
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-    firstName = prefs.getString('first_name') ?? '';
-    lastName = prefs.getString('last_name') ?? '';
-    phoneNumber = prefs.getString('phone_number') ?? '';
-    email = prefs.getString('email') ?? '';
-    userType = prefs.getString('user_type') ?? '';
+      debugPrint('📦 SharedPrefs keys: ${prefs.getKeys()}');
+      debugPrint('first_name   => ${prefs.getString('first_name')}');
+      debugPrint('last_name    => ${prefs.getString('last_name')}');
+      debugPrint('phone_number => ${prefs.getString('phone_number')}');
+      debugPrint('email        => ${prefs.getString('email')}');
+      debugPrint('user_type    => ${prefs.getString('user_type')}');
 
-    initials = _buildInitials(firstName, lastName);
+      final f = prefs.getString('first_name') ?? '';
+      final l = prefs.getString('last_name') ?? '';
 
-    if (avatarBase64 != null && avatarBase64.isNotEmpty) {
-      avatarBytes = base64Decode(avatarBase64);
+      if (!mounted) return;
+      setState(() {
+        firstName   = f;
+        lastName    = l;
+        phoneNumber = prefs.getString('phone_number') ?? '';
+        email       = prefs.getString('email') ?? '';
+        userType    = prefs.getString('user_type') ?? '';
+        initials    = _buildInitials(f, l);
+
+        final avatarBase64 = prefs.getString('avatar_base64');
+        if (avatarBase64 != null && avatarBase64.isNotEmpty) {
+          try {
+            avatarBytes = base64Decode(avatarBase64);
+          } catch (_) {}
+        }
+      });
+    } catch (e) {
+      debugPrint('❌ _loadUser error: $e');
     }
-
-    setState(() {});
   }
 
-  Future<void> _fetchProfileFromApi() async {
+  Future<void> _fetchProfile() async {
     try {
       final data = await ProfileApi.fetchProfile();
 
-      firstName = data['first_name'] ?? '';
-      lastName = data['last_name'] ?? '';
-      phoneNumber = data['phone_number'] ?? '';
-      email = data['email'] ?? '';
-      userType = data['user_type'] ?? '';
-      initials = _buildInitials(firstName, lastName);
+      if (data.isEmpty) {
+        debugPrint('⚠️ API vide, on garde le cache local');
+        if (mounted) setState(() => isLoading = false);
+        return;
+      }
 
-     avatarBytes = ImageUtils.decodeBase64Image(data['avatar_base64']);
-    } catch (_) {}
+      // Mise à jour SharedPreferences avec les données fraîches
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('first_name',   data['first_name']   ?? firstName);
+      await prefs.setString('last_name',    data['last_name']    ?? lastName);
+      await prefs.setString('phone_number', data['phone_number'] ?? phoneNumber);
+      await prefs.setString('email',        data['email']        ?? email);
+      await prefs.setString('user_type',    data['user_type']    ?? userType);
 
-    setState(() => isLoading = false);
+      final f = data['first_name'] ?? firstName;
+      final l = data['last_name']  ?? lastName;
+
+      if (!mounted) return;
+      setState(() {
+        firstName   = f;
+        lastName    = l;
+        phoneNumber = data['phone_number'] ?? phoneNumber;
+        email       = data['email']        ?? email;
+        userType    = data['user_type']    ?? userType;
+        initials    = _buildInitials(f, l);
+        avatarBytes = ImageUtils.decodeBase64Image(data['avatar_base64']) ?? avatarBytes;
+        isLoading   = false;
+      });
+    } catch (e) {
+      debugPrint('❌ _fetchProfile error: $e');
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
   String _buildInitials(String f, String l) {
@@ -160,7 +194,6 @@ class _ProfilePageState extends State<ProfilePage>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                // Avatar
                 Stack(
                   children: [
                     Container(
@@ -199,7 +232,6 @@ class _ProfilePageState extends State<ProfilePage>
                               ),
                             ),
                     ),
-
                     Positioned(
                       bottom: 0,
                       right: 0,
@@ -415,14 +447,14 @@ class _ProfilePageState extends State<ProfilePage>
         content: const Text("Voulez-vous vraiment vous déconnecter ?"),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Annuler")),
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Annuler"),
+          ),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(context);
               final prefs = await SharedPreferences.getInstance();
               final orderId = prefs.getInt('last_order_id');
-
               await LogoutService.performLogout(context, orderId: orderId);
             },
             style: ElevatedButton.styleFrom(backgroundColor: kError),

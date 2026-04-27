@@ -1,4 +1,5 @@
 import 'package:deligood/core/network/api.dart';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -8,75 +9,78 @@ class AuthService {
   final session = SessionManager();
 
   // ===============================
-  // NORMALISATION NUMÉRO (10 chiffres)
+  // NORMALISATION NUMÉRO
   // ===============================
   String normalizePhone(String phone) {
     String digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
-
-    // enlève 225 si présent
     if (digits.startsWith('225') && digits.length > 10) {
       digits = digits.substring(3);
     }
-
-    // garde toujours 10 chiffres
     if (digits.length > 10) {
       digits = digits.substring(digits.length - 10);
     }
-
     return digits;
   }
 
   // ===============================
   // LOGIN
   // ===============================
-Future<bool> login({required String phone, required String pin}) async {
-  final url = Uri.parse(
-    'https://deligood-backend.onrender.com/api/users/login/',
-  );
-
-  final normalizedPhone = normalizePhone(phone);
-
-  print("========== AUTH LOGIN DEBUG ==========");
-  print("RAW PHONE        => $phone");
-  print("NORMALIZED PHONE => $normalizedPhone");
-  print("PIN              => $pin");
-
-  final body = {
-    'phone_number': normalizedPhone,
-    'pin': pin,
-  };
-
-  print("REQUEST BODY => $body");
-
-  try {
-    final res = await http.post(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode(body),
+  Future<bool> login({required String phone, required String pin}) async {
+    final url = Uri.parse(
+      'https://deligood-backend.onrender.com/api/users/login/',
     );
 
-    print("STATUS CODE => ${res.statusCode}");
-    print("RESPONSE BODY => ${res.body}");
+    final normalizedPhone = normalizePhone(phone);
 
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
+    debugPrint("========== AUTH LOGIN DEBUG ==========");
+    debugPrint("NORMALIZED PHONE => $normalizedPhone");
 
-      await session.saveSession(
-        token: data['token'] ?? data['access'],
-        userType: data['user']['user_type'],
-        userId: data['user']['id'],
+    try {
+      final res = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'phone_number': normalizedPhone, 'pin': pin}),
       );
 
-      return true;
-    }
+      debugPrint("STATUS CODE   => ${res.statusCode}");
+      debugPrint("RESPONSE BODY => ${res.body}");
 
-    print("LOGIN FAILED => ${res.body}");
-    return false;
-  } catch (e) {
-    print("LOGIN ERROR => $e");
-    return false;
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+
+        // ✅ On extrait toutes les infos utilisateur dès le login
+        final user = data['user'] as Map<String, dynamic>? ?? {};
+
+        final token = data['token'] ?? data['access'] ?? '';
+
+        await session.saveSession(
+          token: token,
+          userType: user['user_type'] ?? '',
+          userId: user['id'] ?? 0,
+          // 🔥 CORRECTIF : on sauvegarde les infos utilisateur ici
+          firstName: user['first_name'],
+          lastName: user['last_name'],
+          phoneNumber: user['phone_number'],
+          email: user['email'],
+        );
+
+        debugPrint("✅ Session sauvegardée:");
+        debugPrint("   first_name   => ${user['first_name']}");
+        debugPrint("   last_name    => ${user['last_name']}");
+        debugPrint("   phone_number => ${user['phone_number']}");
+        debugPrint("   email        => ${user['email']}");
+        debugPrint("   user_type    => ${user['user_type']}");
+
+        return true;
+      }
+
+      debugPrint("❌ LOGIN FAILED => ${res.body}");
+      return false;
+    } catch (e) {
+      debugPrint("❌ LOGIN ERROR => $e");
+      return false;
+    }
   }
-}
 
   // ===============================
   // LOGOUT
@@ -121,7 +125,6 @@ Future<bool> login({required String phone, required String pin}) async {
         'last_name': lastName,
       },
     );
-
     return res != null;
   }
 }
