@@ -40,7 +40,8 @@ class _RestaurantPageState extends State<RestaurantPage>
 
   late AnimationController _anim;
 
-  final String baseUrl = 'http://127.0.0.1:8000/api/menu/restaurants/';
+  final String baseUrl =
+      'https://deligood-backend.onrender.com/api/menu/restaurants/';
 
   @override
   void initState() {
@@ -177,11 +178,14 @@ class _RestaurantPageState extends State<RestaurantPage>
                       duration: const Duration(milliseconds: 250),
                       margin: EdgeInsets.only(right: 3.w),
                       padding: EdgeInsets.symmetric(
-                          horizontal: 5.w, vertical: 1.h),
+                        horizontal: 5.w,
+                        vertical: 1.h,
+                      ),
                       decoration: BoxDecoration(
                         gradient: selected
                             ? LinearGradient(
-                                colors: [kOrange, Colors.deepOrangeAccent])
+                                colors: [kOrange, Colors.deepOrangeAccent],
+                              )
                             : null,
                         color: selected ? null : Colors.white,
                         borderRadius: BorderRadius.circular(20),
@@ -190,7 +194,7 @@ class _RestaurantPageState extends State<RestaurantPage>
                             BoxShadow(
                               color: kOrange.withOpacity(0.3),
                               blurRadius: 10,
-                            )
+                            ),
                         ],
                       ),
                       child: Center(
@@ -213,35 +217,31 @@ class _RestaurantPageState extends State<RestaurantPage>
             // 🍽 LIST
             Expanded(
               child: isLoading
-                  ? Center(
-                      child: CircularProgressIndicator(color: kOrange),
-                    )
+                  ? Center(child: CircularProgressIndicator(color: kOrange))
                   : filteredRestaurants.isEmpty
-                      ? Center(
-                          child: Text(
-                            "Aucun restaurant",
-                            style: GoogleFonts.poppins(
-                                color: kTextSecondary),
-                          ),
-                        )
-                      : GridView.builder(
-                          padding: EdgeInsets.symmetric(horizontal: 4.w),
-                          itemCount: filteredRestaurants.length,
-                          gridDelegate:
-                              SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 4.w,
-                            mainAxisSpacing: 2.h,
-                            childAspectRatio: 0.72,
-                          ),
-                          itemBuilder: (_, i) {
-                            return FadeTransition(
-                              opacity: _anim,
-                              child: _card(filteredRestaurants[i]),
-                            );
-                          },
-                        ),
-            )
+                  ? Center(
+                      child: Text(
+                        "Aucun restaurant",
+                        style: GoogleFonts.poppins(color: kTextSecondary),
+                      ),
+                    )
+                  : GridView.builder(
+                      padding: EdgeInsets.symmetric(horizontal: 4.w),
+                      itemCount: filteredRestaurants.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 4.w,
+                        mainAxisSpacing: 2.h,
+                        childAspectRatio: 0.72,
+                      ),
+                      itemBuilder: (_, i) {
+                        return FadeTransition(
+                          opacity: _anim,
+                          child: _card(filteredRestaurants[i]),
+                        );
+                      },
+                    ),
+            ),
           ],
         ),
       ),
@@ -250,8 +250,7 @@ class _RestaurantPageState extends State<RestaurantPage>
 
   // 🍔 CARD PREMIUM
   Widget _card(Map<String, dynamic> r) {
-    final name =
-        "${r['first_name'] ?? ''} ${r['last_name'] ?? ''}".trim();
+    final name = "${r['first_name'] ?? ''} ${r['last_name'] ?? ''}".trim();
 
     return GestureDetector(
       onTap: () {
@@ -288,12 +287,10 @@ class _RestaurantPageState extends State<RestaurantPage>
           children: [
             Expanded(
               child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-                child: Image.asset(
-                  'assets/images/n.png',
-                  fit: BoxFit.cover,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(20),
                 ),
+                child: Image.asset('assets/images/n.png', fit: BoxFit.cover),
               ),
             ),
             Padding(
@@ -313,9 +310,10 @@ class _RestaurantPageState extends State<RestaurantPage>
                     children: [
                       Icon(Icons.star, color: kOrange, size: 14),
                       Gap(1.w),
-                      Text("4.6",
-                          style: GoogleFonts.poppins(
-                              color: kTextSecondary)),
+                      Text(
+                        "4.6",
+                        style: GoogleFonts.poppins(color: kTextSecondary),
+                      ),
                       const Spacer(),
                       Text(
                         "25-35 min",

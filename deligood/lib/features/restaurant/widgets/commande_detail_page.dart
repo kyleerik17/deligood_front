@@ -33,7 +33,10 @@ class CommandeDetailPage extends StatefulWidget {
 class _CommandeDetailPageState extends State<CommandeDetailPage> {
   bool _isProcessing = false;
 
-  Future<void> accepterCommande(BuildContext context, CommandeResto commande) async {
+  Future<void> accepterCommande(
+    BuildContext context,
+    CommandeResto commande,
+  ) async {
     setState(() => _isProcessing = true);
 
     final prefs = await SharedPreferences.getInstance();
@@ -46,13 +49,15 @@ class _CommandeDetailPageState extends State<CommandeDetailPage> {
     }
 
     final url =
-    'http://127.0.0.1:8000/api/orders/orders/restaurant/${commande.id}/status/';
+        'https://deligood-backend.onrender.com/api/orders/orders/restaurant/${commande.id}/status/';
     try {
       final response = await http.patch(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': token.startsWith('ey') ? 'Bearer $token' : 'Token $token',
+          'Authorization': token.startsWith('ey')
+              ? 'Bearer $token'
+              : 'Token $token',
         },
         body: jsonEncode({"status": "accepted"}),
       );
@@ -119,7 +124,8 @@ class _CommandeDetailPageState extends State<CommandeDetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    final dejaPrise = widget.commande.status.toLowerCase() != 'pending' &&
+    final dejaPrise =
+        widget.commande.status.toLowerCase() != 'pending' &&
         widget.commande.status.toLowerCase() != 'en attente';
 
     return CupertinoPageScaffold(
@@ -127,17 +133,11 @@ class _CommandeDetailPageState extends State<CommandeDetailPage> {
       navigationBar: CupertinoNavigationBar(
         backgroundColor: CupertinoColors.systemBackground.withOpacity(0.9),
         border: const Border(
-          bottom: BorderSide(
-            color: CupertinoColors.separator,
-            width: 0.5,
-          ),
+          bottom: BorderSide(color: CupertinoColors.separator, width: 0.5),
         ),
         middle: Text(
           'Commande #${widget.commande.id}',
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 17,
-          ),
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 17),
         ),
       ),
       child: SafeArea(
@@ -229,10 +229,7 @@ class _CommandeDetailPageState extends State<CommandeDetailPage> {
                   ),
                   const SizedBox(height: 12),
                   // Téléphone
-                  _buildInfoRow(
-                    CupertinoIcons.phone,
-                    widget.commande.phone,
-                  ),
+                  _buildInfoRow(CupertinoIcons.phone, widget.commande.phone),
                   const SizedBox(height: 8),
                   // Adresse
                   _buildInfoRow(
@@ -406,11 +403,7 @@ class _CommandeDetailPageState extends State<CommandeDetailPage> {
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 20,
-            color: CupertinoColors.secondaryLabel,
-          ),
+          Icon(icon, size: 20, color: CupertinoColors.secondaryLabel),
           const SizedBox(width: 12),
           Expanded(
             child: Text(

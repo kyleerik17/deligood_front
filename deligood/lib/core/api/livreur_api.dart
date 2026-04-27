@@ -3,7 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:deligood/core/session/session_manager.dart';
 
 class LivreurApi {
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String baseUrl = 'https://deligood-backend.onrender.com';
 
   // ================= TOKEN =================
   static String? getToken() {
@@ -16,8 +16,7 @@ class LivreurApi {
     return {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (token != null && token.isNotEmpty)
-        'Authorization': 'Token $token',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Token $token',
     };
   }
 
@@ -36,8 +35,9 @@ class LivreurApi {
 
   // ================= PICKUP COURSE =================
   static Future<void> pickupCourse(int orderId) async {
-    final url =
-        Uri.parse('$baseUrl/api/orders/orders/livreur/$orderId/pickup/');
+    final url = Uri.parse(
+      '$baseUrl/api/orders/orders/livreur/$orderId/pickup/',
+    );
 
     final res = await http.post(url, headers: _headers());
 
@@ -48,8 +48,9 @@ class LivreurApi {
 
   // ================= DELIVER COURSE =================
   static Future<void> markOrderAsDelivered(int orderId) async {
-    final url =
-        Uri.parse('$baseUrl/api/orders/orders/livreur/$orderId/deliver/');
+    final url = Uri.parse(
+      '$baseUrl/api/orders/orders/livreur/$orderId/deliver/',
+    );
 
     final res = await http.post(url, headers: _headers());
 

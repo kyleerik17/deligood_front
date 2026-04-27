@@ -32,7 +32,6 @@ class _RegisterPageState extends State<RegisterPage>
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
 
-  // Types avec icônes et descriptions
   final List<Map<String, dynamic>> _userTypes = [
     {
       'value': 'client',
@@ -64,7 +63,8 @@ class _RegisterPageState extends State<RegisterPage>
       vsync: this,
       duration: const Duration(milliseconds: 800),
     );
-    _fadeAnimation = CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
+    _fadeAnimation =
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
 
     _slideController = AnimationController(
       vsync: this,
@@ -73,7 +73,8 @@ class _RegisterPageState extends State<RegisterPage>
     _slideAnimation = Tween<Offset>(
       begin: const Offset(0, 0.15),
       end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
+    ).animate(
+        CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
 
     _fadeController.forward();
     _slideController.forward();
@@ -107,12 +108,12 @@ class _RegisterPageState extends State<RegisterPage>
       );
 
       if (!mounted) return;
-
+      setState(() => isLoading = false);
       _showSuccessDialog();
     } catch (e) {
+      if (!mounted) return;
+      setState(() => isLoading = false);
       _showError(e.toString().replaceAll('Exception:', '').trim());
-    } finally {
-      if (mounted) setState(() => isLoading = false);
     }
   }
 
@@ -133,7 +134,8 @@ class _RegisterPageState extends State<RegisterPage>
                   color: const Color(0xFF4CAF50).withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.check_circle, color: Color(0xFF4CAF50), size: 60),
+                child: const Icon(Icons.check_circle,
+                    color: Color(0xFF4CAF50), size: 60),
               ),
               SizedBox(height: 2.h),
               Text(
@@ -220,7 +222,8 @@ class _RegisterPageState extends State<RegisterPage>
       obscureText: obscure,
       maxLength: maxLength,
       inputFormatters: formatters,
-      style: GoogleFonts.poppins(fontSize: 13.sp, color: const Color(0xFF1A1A1A)),
+      style: GoogleFonts.poppins(
+          fontSize: 13.sp, color: const Color(0xFF1A1A1A)),
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -239,7 +242,8 @@ class _RegisterPageState extends State<RegisterPage>
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFFF6B35), width: 1.5),
+          borderSide:
+              const BorderSide(color: Color(0xFFFF6B35), width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
@@ -247,9 +251,11 @@ class _RegisterPageState extends State<RegisterPage>
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+          borderSide:
+              const BorderSide(color: Colors.redAccent, width: 1.5),
         ),
-        contentPadding: EdgeInsets.symmetric(vertical: 1.8.h, horizontal: 4.w),
+        contentPadding:
+            EdgeInsets.symmetric(vertical: 1.8.h, horizontal: 4.w),
       ),
       validator: validator,
     );
@@ -261,7 +267,6 @@ class _RegisterPageState extends State<RegisterPage>
       backgroundColor: const Color(0xFFF7F3EF),
       body: Stack(
         children: [
-          // Background décoratif
           Positioned(
             top: -60,
             right: -60,
@@ -314,7 +319,8 @@ class _RegisterPageState extends State<RegisterPage>
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.06),
+                                      color:
+                                          Colors.black.withOpacity(0.06),
                                       blurRadius: 8,
                                     ),
                                   ],
@@ -331,7 +337,6 @@ class _RegisterPageState extends State<RegisterPage>
 
                         SizedBox(height: 3.h),
 
-                        // Titre
                         Text(
                           'Créer un\ncompte',
                           style: GoogleFonts.playfairDisplay(
@@ -368,18 +373,25 @@ class _RegisterPageState extends State<RegisterPage>
                             final isSelected = userType == type['value'];
                             return Expanded(
                               child: GestureDetector(
-                                onTap: () => setState(() => userType = type['value']),
+                                onTap: () =>
+                                    setState(() => userType = type['value']),
                                 child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
+                                  duration:
+                                      const Duration(milliseconds: 200),
                                   margin: EdgeInsets.only(
-                                    right: type['value'] != 'restaurant' ? 2.w : 0,
+                                    right: type['value'] != 'restaurant'
+                                        ? 2.w
+                                        : 0,
                                   ),
-                                  padding: EdgeInsets.symmetric(vertical: 1.5.h),
+                                  padding: EdgeInsets.symmetric(
+                                      vertical: 1.5.h),
                                   decoration: BoxDecoration(
                                     color: isSelected
-                                        ? (type['color'] as Color).withOpacity(0.1)
+                                        ? (type['color'] as Color)
+                                            .withOpacity(0.1)
                                         : Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
+                                    borderRadius:
+                                        BorderRadius.circular(16),
                                     border: Border.all(
                                       color: isSelected
                                           ? type['color'] as Color
@@ -389,8 +401,9 @@ class _RegisterPageState extends State<RegisterPage>
                                     boxShadow: isSelected
                                         ? [
                                             BoxShadow(
-                                              color: (type['color'] as Color)
-                                                  .withOpacity(0.2),
+                                              color:
+                                                  (type['color'] as Color)
+                                                      .withOpacity(0.2),
                                               blurRadius: 8,
                                               offset: const Offset(0, 2),
                                             ),
@@ -430,10 +443,10 @@ class _RegisterPageState extends State<RegisterPage>
                         SizedBox(height: 3.h),
 
                         // ===== SECTION INFOS PERSO =====
-                        _buildSectionTitle('Informations personnelles', Icons.person_outline),
+                        _buildSectionTitle('Informations personnelles',
+                            Icons.person_outline),
                         SizedBox(height: 1.5.h),
 
-                        // Prénom + Nom
                         Row(
                           children: [
                             Expanded(
@@ -441,7 +454,8 @@ class _RegisterPageState extends State<RegisterPage>
                                 controller: firstNameController,
                                 label: 'Prénom',
                                 icon: Icons.person_rounded,
-                                validator: (v) => v!.isEmpty ? 'Requis' : null,
+                                validator: (v) =>
+                                    v!.isEmpty ? 'Requis' : null,
                               ),
                             ),
                             SizedBox(width: 3.w),
@@ -450,7 +464,8 @@ class _RegisterPageState extends State<RegisterPage>
                                 controller: lastNameController,
                                 label: 'Nom',
                                 icon: Icons.person_outline_rounded,
-                                validator: (v) => v!.isEmpty ? 'Requis' : null,
+                                validator: (v) =>
+                                    v!.isEmpty ? 'Requis' : null,
                               ),
                             ),
                           ],
@@ -469,7 +484,8 @@ class _RegisterPageState extends State<RegisterPage>
                         SizedBox(height: 3.h),
 
                         // ===== SECTION CONNEXION =====
-                        _buildSectionTitle('Identifiants', Icons.lock_outline),
+                        _buildSectionTitle(
+                            'Identifiants', Icons.lock_outline),
                         SizedBox(height: 1.5.h),
 
                         _buildField(
@@ -478,9 +494,12 @@ class _RegisterPageState extends State<RegisterPage>
                           icon: Icons.phone_rounded,
                           keyboard: TextInputType.phone,
                           hint: '0585113413',
-                          formatters: [FilteringTextInputFormatter.digitsOnly],
-                          validator: (v) =>
-                              v == null || v.length < 8 ? 'Numéro invalide' : null,
+                          formatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
+                          validator: (v) => v == null || v.length < 8
+                              ? 'Numéro invalide'
+                              : null,
                         ),
 
                         SizedBox(height: 1.5.h),
@@ -492,17 +511,23 @@ class _RegisterPageState extends State<RegisterPage>
                           keyboard: TextInputType.number,
                           obscure: obscurePin,
                           maxLength: 4,
-                          formatters: [FilteringTextInputFormatter.digitsOnly],
+                          formatters: [
+                            FilteringTextInputFormatter.digitsOnly
+                          ],
                           suffix: IconButton(
                             icon: Icon(
-                              obscurePin ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                              obscurePin
+                                  ? Icons.visibility_outlined
+                                  : Icons.visibility_off_outlined,
                               color: Colors.grey.shade400,
                               size: 20,
                             ),
-                            onPressed: () => setState(() => obscurePin = !obscurePin),
+                            onPressed: () =>
+                                setState(() => obscurePin = !obscurePin),
                           ),
-                          validator: (v) =>
-                              v == null || v.length != 4 ? 'PIN à 4 chiffres requis' : null,
+                          validator: (v) => v == null || v.length != 4
+                              ? 'PIN à 4 chiffres requis'
+                              : null,
                         ),
 
                         SizedBox(height: 4.h),
@@ -515,7 +540,8 @@ class _RegisterPageState extends State<RegisterPage>
                             onPressed: isLoading ? null : _register,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFFF6B35),
-                              disabledBackgroundColor: Colors.grey.shade300,
+                              disabledBackgroundColor:
+                                  Colors.grey.shade300,
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(16),
@@ -531,7 +557,8 @@ class _RegisterPageState extends State<RegisterPage>
                                     ),
                                   )
                                 : Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
                                     children: [
                                       Text(
                                         'Créer mon compte',
@@ -542,8 +569,10 @@ class _RegisterPageState extends State<RegisterPage>
                                         ),
                                       ),
                                       SizedBox(width: 2.w),
-                                      const Icon(Icons.arrow_forward_rounded,
-                                          color: Colors.white, size: 20),
+                                      const Icon(
+                                          Icons.arrow_forward_rounded,
+                                          color: Colors.white,
+                                          size: 20),
                                     ],
                                   ),
                           ),
@@ -572,7 +601,8 @@ class _RegisterPageState extends State<RegisterPage>
                                     fontWeight: FontWeight.bold,
                                     color: const Color(0xFFFF6B35),
                                     decoration: TextDecoration.underline,
-                                    decorationColor: const Color(0xFFFF6B35),
+                                    decorationColor:
+                                        const Color(0xFFFF6B35),
                                   ),
                                 ),
                               ),

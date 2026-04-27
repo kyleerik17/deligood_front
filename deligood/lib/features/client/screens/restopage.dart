@@ -22,8 +22,7 @@ class Restopage extends StatefulWidget {
   State<Restopage> createState() => _RestopageState();
 }
 
-class _RestopageState extends State<Restopage>
-    with TickerProviderStateMixin {
+class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
   List menus = [];
   List<Map> cart = [];
 
@@ -54,7 +53,7 @@ class _RestopageState extends State<Restopage>
   Future<void> fetchMenus() async {
     final id = widget.restaurant['id'];
     final url =
-        "http://127.0.0.1:8000/api/menu/items/?restaurant_id=$id";
+        "https://deligood-backend.onrender.com/api/menu/items/?restaurant_id=$id";
 
     final res = await http.get(Uri.parse(url));
 
@@ -87,7 +86,7 @@ class _RestopageState extends State<Restopage>
   Future<void> sendCart() async {
     if (token == null) return;
 
-    final url = "http://127.0.0.1:8000/api/orders/cart/add/";
+    final url = "https://deligood-backend.onrender.com/api/orders/cart/add/";
 
     for (var item in cart) {
       await http.post(
@@ -96,10 +95,7 @@ class _RestopageState extends State<Restopage>
           "Content-Type": "application/json",
           "Authorization": "Token $token",
         },
-        body: jsonEncode({
-          "menu_id": item['id'],
-          "quantity": 1,
-        }),
+        body: jsonEncode({"menu_id": item['id'], "quantity": 1}),
       );
     }
   }
@@ -131,7 +127,7 @@ class _RestopageState extends State<Restopage>
                     gradient: LinearGradient(
                       colors: [
                         Colors.black.withOpacity(0.5),
-                        Colors.transparent
+                        Colors.transparent,
                       ],
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
@@ -152,8 +148,7 @@ class _RestopageState extends State<Restopage>
               // 🍔 MENU LIST
               Expanded(
                 child: loading
-                    ? Center(
-                        child: CircularProgressIndicator(color: kOrange))
+                    ? Center(child: CircularProgressIndicator(color: kOrange))
                     : ListView.builder(
                         padding: EdgeInsets.all(4.w),
                         itemCount: menus.length,
@@ -178,13 +173,14 @@ class _RestopageState extends State<Restopage>
                 padding: EdgeInsets.fromLTRB(5.w, 2.h, 5.w, 3.h),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(24)),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
+                  ),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.08),
                       blurRadius: 20,
-                    )
+                    ),
                   ],
                 ),
                 child: Row(
@@ -222,7 +218,9 @@ class _RestopageState extends State<Restopage>
                           borderRadius: BorderRadius.circular(16),
                         ),
                         padding: EdgeInsets.symmetric(
-                            horizontal: 6.w, vertical: 1.5.h),
+                          horizontal: 6.w,
+                          vertical: 1.5.h,
+                        ),
                         elevation: 0,
                       ),
                       child: Text(
@@ -232,11 +230,11 @@ class _RestopageState extends State<Restopage>
                           color: Colors.white,
                         ),
                       ),
-                    )
+                    ),
                   ],
                 ),
               ),
-            )
+            ),
         ],
       ),
     );
@@ -250,10 +248,7 @@ class _RestopageState extends State<Restopage>
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-          )
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
         ],
       ),
       child: Row(
@@ -261,7 +256,8 @@ class _RestopageState extends State<Restopage>
           // 🖼 IMAGE
           ClipRRect(
             borderRadius: const BorderRadius.horizontal(
-                left: Radius.circular(18)),
+              left: Radius.circular(18),
+            ),
             child: Image.asset(
               'assets/images/n.png',
               width: 22.w,
@@ -309,7 +305,7 @@ class _RestopageState extends State<Restopage>
               ),
               child: const Icon(Icons.add, color: kOrange),
             ),
-          )
+          ),
         ],
       ),
     );

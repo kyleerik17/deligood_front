@@ -9,7 +9,7 @@ class ApiService {
   ApiService._();
 
   // ===================== BASE URL =====================
-  static const String _baseUrl = 'http://127.0.0.1:8000';
+  static const String _baseUrl = 'https://deligood-backend.onrender.com';
   static const Duration _timeout = Duration(seconds: 20);
 
   static String get baseUrl => _baseUrl;
@@ -39,6 +39,19 @@ class ApiService {
     }
 
     debugPrint('❌ API ERROR [$status]: ${response.body}');
+
+    // Essaye d'extraire le message d'erreur depuis le JSON
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map) {
+        final msg =
+            data['detail'] ?? data['message'] ?? data.values.first?.toString();
+        if (msg != null) throw HttpException(msg);
+      }
+    } catch (e) {
+      if (e is HttpException) rethrow;
+    }
+
     throw HttpException('Erreur serveur ($status)');
   }
 
@@ -114,14 +127,11 @@ class ApiService {
   }
 
   // ===================== ORDERS =====================
-
-  // 📦 Détails d’une commande
   static Future<Map<String, dynamic>> getOrderDetails(int orderId) async {
     final data = await get('/api/orders/orders/$orderId/');
     return data as Map<String, dynamic>;
   }
 
-  // 📍 Positions (client / restaurant / livreur)
   static Future<Map<String, dynamic>> getOrderPositions(int orderId) async {
     final data = await get('/api/orders/orders/$orderId/positions/');
     return data as Map<String, dynamic>;
@@ -185,41 +195,42 @@ class ApiService {
     return data as List<dynamic>;
   }
 
-   static Future<bool> verifyIdentity({
-  required String phone,
-  required String firstName,
-  required String lastName,
+  static Future<bool> verifyIdentity({
+    required String phone,
+    required String firstName,
+    required String lastName,
   }) async {
-  final data = await post(
-    '/api/users/pin/reset/identity/',
-    auth: false,
-    body: {
-      'phone_number': phone,
-      'first_name': firstName,
-      'last_name': lastName,
-    },
-  );
+    final data = await post(
+      '/api/users/pin/reset/identity/',
+      auth: false,
+      body: {
+        'phone_number': phone,
+        'first_name': firstName,
+        'last_name': lastName,
+      },
+    );
 
-  return data['reset_allowed'] == true;
+    return data['reset_allowed'] == true;
+  }
+
+  static Future<void> resetPin({
+    required String phoneNumber,
+    required String newPin,
+    required String newPinConfirmation,
+  }) async {
+    await post(
+      '/api/users/pin/reset/confirm/',
+      auth: false,
+      body: {
+        'phone_number': phoneNumber,
+        'new_pin': newPin,
+        'new_pin_confirmation': newPinConfirmation,
+      },
+    );
+  }
 }
 
-static Future<void> resetPin({
-  required String phoneNumber,
-  required String newPin,
-  required String newPinConfirmation,
-}) async {
-  await post(
-    '/api/users/pin/reset/confirm/',
-    auth: false,
-    body: {
-      'phone_number': phoneNumber,
-      'new_pin': newPin,
-      'new_pin_confirmation': newPinConfirmation,
-    },
-  );
-}
-}
-
+// ===================== REGISTER =====================
 Future<void> register({
   required String phone,
   required String pin,
@@ -228,36 +239,53 @@ Future<void> register({
   required String locality,
   required String userType,
 }) async {
-  final response = await http.post(
-    Uri.parse('${ApiService.baseUrl}/api/users/register/'),
-    headers: {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json', // IMPORTANT 🔥
-    },
-    body: jsonEncode({
-      'phone_number': phone,
-      'pin': pin,
-      'pin_confirmation': pin,
-      'first_name': firstName,
-      'last_name': lastName,
-      'locality': locality,
-      'user_type': userType,
-    }),
-  ).timeout(const Duration(seconds: 10));
+  final response = await http
+      .post(
+        Uri.parse('https://deligood-backend.onrender.com/api/users/register/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: jsonEncode({
+          'phone_number': phone,
+          'pin': pin,
+          'pin_confirmation': pin,
+          'first_name': firstName,
+          'last_name': lastName,
+          'locality': locality,
+          'user_type': userType,
+        }),
+      )
+      .timeout(const Duration(seconds: 10));
 
   debugPrint("STATUS: ${response.statusCode}");
   debugPrint("BODY: ${response.body}");
 
-  // 🔐 Protection anti HTML
+  // Protection anti HTML (réponse nginx/django non JSON)
   if (!response.body.trim().startsWith("{")) {
-    throw Exception("❌ Réponse serveur invalide (HTML au lieu de JSON)");
+    throw Exception(
+      "Réponse serveur invalide. Vérifie que le serveur est bien démarré.",
+    );
   }
-
-  final data = jsonDecode(response.body);
 
   if (response.statusCode != 200 && response.statusCode != 201) {
-    throw Exception(data['detail'] ?? 'Erreur inscription');
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map) {
+        final msg =
+            data['detail'] ??
+            data['message'] ??
+            data.values.first?.toString() ??
+            'Erreur inscription';
+        throw Exception(msg);
+      }
+    } catch (e) {
+      if (e is Exception) rethrow;
+    }
+    throw Exception('Erreur inscription (${response.statusCode})');
   }
+
+  // ✅ 200 ou 201 → succès, on ne throw rien
 }
 
 // ===================== PANIER API =====================

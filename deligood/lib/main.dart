@@ -2,10 +2,31 @@ import 'package:deligood/features/auth/screens/login/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 // Pages
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
 
+// ✅ Fonction de décodage JWT — à mettre ici, en dehors des classes
+Map<String, dynamic> decodeJwt(String token) {
+  final parts = token.split('.');
+  if (parts.length != 3) return {};
+
+  String payload = parts[1];
+
+  // Padding Base64
+  switch (payload.length % 4) {
+    case 2:
+      payload += '==';
+      break;
+    case 3:
+      payload += '=';
+      break;
+  }
+
+  final decoded = utf8.decode(base64Url.decode(payload));
+  return jsonDecode(decoded) as Map<String, dynamic>;
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -47,36 +68,31 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _init();
   }
 
-  // 🔥 CHARGE TOUT UNE SEULE FOIS PROPREMENT
-  Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
+ Future<void> _init() async {
+  final prefs = await SharedPreferences.getInstance();
 
-    final token = prefs.getString('access_token');
-    final type = prefs.getString('user_type');
-    final storedOrderId = prefs.getInt('order_id') ?? 0;
+  final token = prefs.getString('access_token');
+  final type = prefs.getString('user_type');
+  final storedOrderId = prefs.getInt('order_id') ?? 0;
 
-    if (!mounted) return;
+  debugPrint('TOKEN: $token');
+  debugPrint('USER TYPE: $type');
 
-    setState(() {
-      orderId = storedOrderId;
+  if (!mounted) return;
 
-      if (token != null &&
-          token.isNotEmpty &&
-          type != null &&
-          type.isNotEmpty) {
-        userRole = type.toLowerCase().trim();
-      } else {
-        userRole = null;
-      }
-
-      isLoading = false;
-    });
-  }
-
-  // 🔥 APPELÉ APRÈS LOGIN
+  setState(() {
+    orderId = storedOrderId;
+    userRole = (token != null && token.isNotEmpty && type != null && type.isNotEmpty)
+        ? type.toLowerCase().trim()
+        : null;
+    isLoading = false;
+  });
+}
+  // 🔥 APPELÉ APRÈS LOGIN — extrait le rôle directement du token reçu
   Future<void> onLoginSuccess(String type) async {
     final prefs = await SharedPreferences.getInstance();
 
+    // On sauvegarde aussi user_type pour être sûr
     await prefs.setString('user_type', type.toLowerCase().trim());
 
     if (!mounted) return;

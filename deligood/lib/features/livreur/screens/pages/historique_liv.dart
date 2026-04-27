@@ -64,7 +64,9 @@ class OrderService {
     }
 
     final response = await http.get(
-      Uri.parse('http://127.0.0.1:8000/api/orders/orders/livreur/delivered/'),
+      Uri.parse(
+        'https://deligood-backend.onrender.com/api/orders/orders/livreur/delivered/',
+      ),
       headers: {
         'Authorization': 'Token $token',
         'Content-Type': 'application/json',

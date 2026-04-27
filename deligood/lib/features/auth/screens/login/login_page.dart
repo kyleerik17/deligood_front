@@ -1,3 +1,5 @@
+
+
 import 'package:deligood/core/session/auth_service.dart';
 import 'package:deligood/features/auth/screens/login/forget_password.dart';
 import 'package:deligood/features/auth/screens/register/register_page.dart';
@@ -5,6 +7,7 @@ import 'package:deligood/features/auth/screens/register/register_page.dart';
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+
 import 'package:sizer/sizer.dart';
 
 // ================= DESIGN =================
@@ -78,7 +81,11 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => loading = false);
+
+    // Après avoir reçu la réponse de l'API login
+
   }
+  
 
   // ================= UI =================
   @override

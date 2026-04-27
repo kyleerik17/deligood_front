@@ -59,7 +59,7 @@ class _CommandePageState extends State<CommandePage>
 
     final response = await http.get(
       Uri.parse(
-        'http://127.0.0.1:8000/api/orders/menu/restaurant/${widget.restaurantId}/',
+        'https://deligood-backend.onrender.com/api/orders/menu/restaurant/${widget.restaurantId}/',
       ),
       headers: {
         'Content-Type': 'application/json',
@@ -89,7 +89,9 @@ class _CommandePageState extends State<CommandePage>
 
       print('Fetched items: ${_allItems.length}');
       for (var item in _allItems) {
-        print('Item: ${item.name}, category: ${item.category}, price: ${item.price}');
+        print(
+          'Item: ${item.name}, category: ${item.category}, price: ${item.price}',
+        );
       }
 
       _animationController.forward();
@@ -103,10 +105,12 @@ class _CommandePageState extends State<CommandePage>
   void _filterItems() {
     setState(() {
       _filteredItems = _allItems.where((item) {
-        final matchCat = _selectedCategory == 'Tout' ||
+        final matchCat =
+            _selectedCategory == 'Tout' ||
             item.category.toLowerCase().trim() ==
                 _selectedCategory.toLowerCase().trim();
-        final matchSearch = item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
+        final matchSearch =
+            item.name.toLowerCase().contains(_searchQuery.toLowerCase()) ||
             item.description.toLowerCase().contains(_searchQuery.toLowerCase());
         return matchCat && matchSearch;
       }).toList();
@@ -117,53 +121,60 @@ class _CommandePageState extends State<CommandePage>
   }
 
   // ==================== BUILD ====================
-@override
-Widget build(BuildContext context) {
-  return Scaffold(
-    backgroundColor: const Color(0xFFF7F3EF),
-    body: FutureBuilder<List<MenuItem>>(
-      future: _futureMenu,
-      builder: (context, snapshot) {
-        print('FutureBuilder snapshot: state=${snapshot.connectionState}, hasData=${snapshot.hasData}, hasError=${snapshot.hasError}');
-        
-        final items = snapshot.data ?? []; // sécurise null
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator(color: Color(0xFFFF6B35)));
-        }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F3EF),
+      body: FutureBuilder<List<MenuItem>>(
+        future: _futureMenu,
+        builder: (context, snapshot) {
+          print(
+            'FutureBuilder snapshot: state=${snapshot.connectionState}, hasData=${snapshot.hasData}, hasError=${snapshot.hasError}',
+          );
 
-        if (snapshot.hasError) {
-          return _buildErrorState(snapshot.error.toString());
-        }
+          final items = snapshot.data ?? []; // sécurise null
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(color: Color(0xFFFF6B35)),
+            );
+          }
 
-        // On initialise _allItems et _filteredItems si pas encore fait
-        if (_allItems.isEmpty && items.isNotEmpty) {
-          _allItems = items;
-          _filteredItems = items;
-          final cats = items.map((e) => e.category).where((c) => c.isNotEmpty).toSet().toList();
-          _categories = ['Tout', ...cats];
-          _animationController.forward();
-        }
+          if (snapshot.hasError) {
+            return _buildErrorState(snapshot.error.toString());
+          }
 
-        if (_filteredItems.isEmpty) {
-          return _buildEmptyState();
-        }
+          // On initialise _allItems et _filteredItems si pas encore fait
+          if (_allItems.isEmpty && items.isNotEmpty) {
+            _allItems = items;
+            _filteredItems = items;
+            final cats = items
+                .map((e) => e.category)
+                .where((c) => c.isNotEmpty)
+                .toSet()
+                .toList();
+            _categories = ['Tout', ...cats];
+            _animationController.forward();
+          }
 
-        return CustomScrollView(
-          physics: const BouncingScrollPhysics(),
-          slivers: [
-            _buildSliverAppBar(),
-            SliverToBoxAdapter(child: _buildSearchBar()),
-            if (_categories.length > 1)
-              SliverToBoxAdapter(child: _buildCategories()),
-            SliverToBoxAdapter(child: _buildStatsBar()),
-            _buildGrid(),
-          ],
-        );
-      },
-    ),
-  );
-}
+          if (_filteredItems.isEmpty) {
+            return _buildEmptyState();
+          }
 
+          return CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
+              _buildSliverAppBar(),
+              SliverToBoxAdapter(child: _buildSearchBar()),
+              if (_categories.length > 1)
+                SliverToBoxAdapter(child: _buildCategories()),
+              SliverToBoxAdapter(child: _buildStatsBar()),
+              _buildGrid(),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
   // ==================== SLIVER APP BAR ====================
   Widget _buildSliverAppBar() {
@@ -180,7 +191,11 @@ Widget build(BuildContext context) {
             color: Colors.black.withOpacity(0.4),
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+          child: const Icon(
+            Icons.arrow_back_ios_new,
+            color: Colors.white,
+            size: 18,
+          ),
         ),
       ),
       actions: [
@@ -191,7 +206,11 @@ Widget build(BuildContext context) {
             borderRadius: BorderRadius.circular(12),
           ),
           child: IconButton(
-            icon: const Icon(Icons.favorite_border, color: Colors.white, size: 20),
+            icon: const Icon(
+              Icons.favorite_border,
+              color: Colors.white,
+              size: 20,
+            ),
             onPressed: () {},
           ),
         ),
@@ -206,7 +225,11 @@ Widget build(BuildContext context) {
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
                 color: const Color(0xFF2A2A2A),
-                child: const Icon(Icons.restaurant, size: 80, color: Colors.white30),
+                child: const Icon(
+                  Icons.restaurant,
+                  size: 80,
+                  color: Colors.white30,
+                ),
               ),
             ),
             Container(
@@ -241,7 +264,11 @@ Widget build(BuildContext context) {
                   SizedBox(height: 0.5.h),
                   Row(
                     children: [
-                      const Icon(Icons.star, color: Color(0xFFFFD700), size: 16),
+                      const Icon(
+                        Icons.star,
+                        color: Color(0xFFFFD700),
+                        size: 16,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         '4.8 · Livraison 20-30 min',
@@ -387,14 +414,11 @@ Widget build(BuildContext context) {
     return SliverPadding(
       padding: EdgeInsets.fromLTRB(4.w, 0, 4.w, 12.h),
       sliver: SliverGrid(
-        delegate: SliverChildBuilderDelegate(
-          (context, index) {
-            final item = _filteredItems[index];
-            print('Building card for item: ${item.name}');
-            return _buildMenuCard(item, index);
-          },
-          childCount: _filteredItems.length,
-        ),
+        delegate: SliverChildBuilderDelegate((context, index) {
+          final item = _filteredItems[index];
+          print('Building card for item: ${item.name}');
+          return _buildMenuCard(item, index);
+        }, childCount: _filteredItems.length),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
           crossAxisSpacing: 3.w,
@@ -412,7 +436,10 @@ Widget build(BuildContext context) {
       builder: (context, child) {
         final delay = (index * 0.1).clamp(0.0, 0.9);
         final animValue = Curves.easeOut.transform(
-          (((_animationController.value - delay) / (1.0 - delay)).clamp(0.0, 1.0)),
+          (((_animationController.value - delay) / (1.0 - delay)).clamp(
+            0.0,
+            1.0,
+          )),
         );
         return Opacity(
           opacity: animValue,
@@ -581,7 +608,11 @@ Widget build(BuildContext context) {
                 color: Colors.red.shade50,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.error_outline, size: 56, color: Colors.red.shade300),
+              child: Icon(
+                Icons.error_outline,
+                size: 56,
+                color: Colors.red.shade300,
+              ),
             ),
             SizedBox(height: 3.h),
             Text(
@@ -651,15 +682,14 @@ class MenuItem {
     required this.imageUrl,
   });
 
- factory MenuItem.fromJson(Map<String, dynamic> json) {
-  return MenuItem(
-    id: json['id'] ?? 0,
-    name: json['name'] ?? '',
-    description: json['description'] ?? '',
-    price: json['price']?.toString() ?? '0',
-    category: json['category'] ?? '',
-    imageUrl: json['image'] ?? '', // toujours string non-null
-  );
-}
-
+  factory MenuItem.fromJson(Map<String, dynamic> json) {
+    return MenuItem(
+      id: json['id'] ?? 0,
+      name: json['name'] ?? '',
+      description: json['description'] ?? '',
+      price: json['price']?.toString() ?? '0',
+      category: json['category'] ?? '',
+      imageUrl: json['image'] ?? '', // toujours string non-null
+    );
+  }
 }

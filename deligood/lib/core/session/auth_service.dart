@@ -29,57 +29,54 @@ class AuthService {
   // ===============================
   // LOGIN
   // ===============================
-  Future<bool> login({
-    required String phone,
-    required String pin,
-  }) async {
-    final url = Uri.parse('http://127.0.0.1:8000/api/users/login/');
+Future<bool> login({required String phone, required String pin}) async {
+  final url = Uri.parse(
+    'https://deligood-backend.onrender.com/api/users/login/',
+  );
 
-    // 🔥 NORMALISATION
-    final normalizedPhone = normalizePhone(phone);
+  final normalizedPhone = normalizePhone(phone);
 
-    // 🔥 DEBUG PRINTS
-    print("========== AUTH LOGIN DEBUG ==========");
-    print("RAW PHONE        => $phone");
-    print("NORMALIZED PHONE => $normalizedPhone");
-    print("PIN              => $pin");
+  print("========== AUTH LOGIN DEBUG ==========");
+  print("RAW PHONE        => $phone");
+  print("NORMALIZED PHONE => $normalizedPhone");
+  print("PIN              => $pin");
 
-    final body = {
-      'phone_number': normalizedPhone,
-      'pin': pin,
-    };
+  final body = {
+    'phone_number': normalizedPhone,
+    'pin': pin,
+  };
 
-    print("REQUEST BODY => $body");
+  print("REQUEST BODY => $body");
 
-    try {
-      final res = await http.post(
-        url,
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(body),
+  try {
+    final res = await http.post(
+      url,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+
+    print("STATUS CODE => ${res.statusCode}");
+    print("RESPONSE BODY => ${res.body}");
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+
+      await session.saveSession(
+        token: data['token'] ?? data['access'],
+        userType: data['user']['user_type'],
+        userId: data['user']['id'],
       );
 
-      print("STATUS CODE => ${res.statusCode}");
-      print("RESPONSE BODY => ${res.body}");
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-
-        await session.saveSession(
-          token: data['token'] ?? data['access'],
-          userType: data['user']['user_type'],
-          userId: data['user']['id'],
-        );
-
-        return true;
-      } else {
-        print("LOGIN FAILED => ${res.body}");
-        return false;
-      }
-    } catch (e) {
-      print("LOGIN ERROR => $e");
-      return false;
+      return true;
     }
+
+    print("LOGIN FAILED => ${res.body}");
+    return false;
+  } catch (e) {
+    print("LOGIN ERROR => $e");
+    return false;
   }
+}
 
   // ===============================
   // LOGOUT

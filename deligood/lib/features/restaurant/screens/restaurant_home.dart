@@ -18,7 +18,7 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
   String orderStatus = 'pending';
   bool isLoading = true;
 
-  final String baseUrl = 'http://127.0.0.1:8000'; // LOCAL ONLY
+  final String baseUrl = 'https://deligood-backend.onrender.com'; // LOCAL ONLY
   final String wsUrl = 'ws://127.0.0.1:8000/ws/orders/';
 
   @override
@@ -97,9 +97,9 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
   // UI HELPERS
   // =========================
   void _showNotification(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Color _statusColor() {
@@ -121,9 +121,7 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     return Scaffold(
@@ -202,10 +200,7 @@ class _HomeRestaurantState extends State<HomeRestaurant> {
           ),
         ),
         onPressed: onTap,
-        child: Text(
-          label,
-          style: const TextStyle(fontSize: 16),
-        ),
+        child: Text(label, style: const TextStyle(fontSize: 16)),
       ),
     );
   }

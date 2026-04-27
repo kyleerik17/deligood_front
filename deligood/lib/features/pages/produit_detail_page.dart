@@ -6,14 +6,19 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'panier_page.dart';
 
-
 class ProduitDetailPage extends StatefulWidget {
   final MenuItem menuItem;
-    final int restaurantId;
+  final int restaurantId;
   final String restaurantName;
   final String image;
 
-  const ProduitDetailPage({super.key, required this.menuItem, required this.restaurantId, required this.restaurantName, required this.image});
+  const ProduitDetailPage({
+    super.key,
+    required this.menuItem,
+    required this.restaurantId,
+    required this.restaurantName,
+    required this.image,
+  });
 
   @override
   State<ProduitDetailPage> createState() => _ProduitDetailPageState();
@@ -23,58 +28,61 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
   int quantity = 1;
   bool loading = false;
 
- Future<void> ajouterAuPanier() async {
-  setState(() => loading = true);
+  Future<void> ajouterAuPanier() async {
+    setState(() => loading = true);
 
-  final prefs = await SharedPreferences.getInstance();
-  final token = prefs.getString('access_token');
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token');
 
-  final response = await http.post(
-    Uri.parse('http://127.0.0.1:8000/api/orders/cart/add/'),
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Token $token',
-    },
-    body: jsonEncode({
-      "menu_item_id": widget.menuItem.id,
-      "quantity": quantity,
-    }),
-  );
+    final response = await http.post(
+      Uri.parse('https://deligood-backend.onrender.com/api/orders/cart/add/'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Token $token',
+      },
+      body: jsonEncode({
+        "menu_item_id": widget.menuItem.id,
+        "quantity": quantity,
+      }),
+    );
 
-  setState(() => loading = false);
+    setState(() => loading = false);
 
-  if (response.statusCode == 200) {
-    // Afficher un message de succès sans redirection
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("$quantity x ${widget.menuItem.name} ajouté(s) au panier"),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-        action: SnackBarAction(
-          label: 'Voir le panier',
-          textColor: Colors.white,
-          onPressed: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const PanierPage()),
-            );
-          },
+    if (response.statusCode == 200) {
+      // Afficher un message de succès sans redirection
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "$quantity x ${widget.menuItem.name} ajouté(s) au panier",
+          ),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+          action: SnackBarAction(
+            label: 'Voir le panier',
+            textColor: Colors.white,
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PanierPage()),
+              );
+            },
+          ),
         ),
-      ),
-    );
-    
-    // Réinitialiser la quantité (optionnel)
-    setState(() => quantity = 1);
-  } else {
-    debugPrint(response.body);
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Erreur ajout panier"),
-        backgroundColor: Colors.red,
-      ),
-    );
+      );
+
+      // Réinitialiser la quantité (optionnel)
+      setState(() => quantity = 1);
+    } else {
+      debugPrint(response.body);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Erreur ajout panier"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
-}
+
   @override
   Widget build(BuildContext context) {
     final item = widget.menuItem;
@@ -149,7 +157,10 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
                   // Quantité premium
                   Center(
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 4.w,
+                        vertical: 1.h,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.grey.shade100,
                         borderRadius: BorderRadius.circular(20),
@@ -166,12 +177,16 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
                         children: [
                           // Bouton -
                           InkWell(
-                            onTap: quantity > 1 ? () => setState(() => quantity--) : null,
+                            onTap: quantity > 1
+                                ? () => setState(() => quantity--)
+                                : null,
                             borderRadius: BorderRadius.circular(20),
                             child: Container(
                               padding: EdgeInsets.all(1.5.h),
                               decoration: BoxDecoration(
-                                color: quantity > 1 ? Colors.deepOrange : Colors.grey.shade300,
+                                color: quantity > 1
+                                    ? Colors.deepOrange
+                                    : Colors.grey.shade300,
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -208,7 +223,8 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
                                 shape: BoxShape.circle,
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.deepOrange.shade200.withOpacity(0.5),
+                                    color: Colors.deepOrange.shade200
+                                        .withOpacity(0.5),
                                     blurRadius: 8,
                                     offset: const Offset(0, 3),
                                   ),
@@ -241,9 +257,7 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
                         ),
                       ),
                       child: loading
-                          ? const CircularProgressIndicator(
-                              color: Colors.white,
-                            )
+                          ? const CircularProgressIndicator(color: Colors.white)
                           : Text(
                               "Ajouter au panier",
                               style: TextStyle(

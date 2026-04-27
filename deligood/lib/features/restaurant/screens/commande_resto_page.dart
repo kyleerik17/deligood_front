@@ -10,14 +10,14 @@ import 'package:sizer/sizer.dart';
 // ─────────────────────────────────────────────
 // Design System — DeliGood
 // ─────────────────────────────────────────────
-const kOrange        = Color(0xFFFF6B35);
-const kBg            = Color(0xFFF7F3EF);
-const kWhite         = Colors.white;
-const kTextPrimary   = Color(0xFF1A1A1A);
+const kOrange = Color(0xFFFF6B35);
+const kBg = Color(0xFFF7F3EF);
+const kWhite = Colors.white;
+const kTextPrimary = Color(0xFF1A1A1A);
 const kTextSecondary = Color(0xFF757575);
-const kSuccess       = Color(0xFF4CAF50);
-const kError         = Color(0xFFFF5A5F);
-const kTeal          = Color(0xFF00CCBC);
+const kSuccess = Color(0xFF4CAF50);
+const kError = Color(0xFFFF5A5F);
+const kTeal = Color(0xFF00CCBC);
 
 class CommandeRestoPage extends StatefulWidget {
   const CommandeRestoPage({super.key});
@@ -29,21 +29,24 @@ class CommandeRestoPage extends StatefulWidget {
 class _CommandeRestoPageState extends State<CommandeRestoPage>
     with SingleTickerProviderStateMixin {
   List<CommandeResto> commandes = [];
-  bool   isLoading     = true;
-  String errorMessage  = '';
-  String accessToken   = '';
+  bool isLoading = true;
+  String errorMessage = '';
+  String accessToken = '';
 
   late AnimationController _fadeController;
-  late Animation<double>   _fadeAnimation;
+  late Animation<double> _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
     _fadeController = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600))
-      ..forward();
-    _fadeAnimation =
-        CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..forward();
+    _fadeAnimation = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeIn,
+    );
 
     fetchCommandes();
   }
@@ -54,7 +57,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     super.dispose();
   }
 
-  String get _baseUrl => 'http://127.0.0.1:8000';
+  String get _baseUrl => 'https://deligood-backend.onrender.com';
 
   // ── API ───────────────────────────────────────────────
   Future<List<CommandeResto>> _fetchCommandesResto() async {
@@ -68,7 +71,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
 
     final isJwt = token.startsWith('ey');
     final headers = {
-      'Content-Type':  'application/json',
+      'Content-Type': 'application/json',
       'Authorization': isJwt ? 'Bearer $token' : 'Token $token',
     };
 
@@ -89,13 +92,22 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
   }
 
   Future<void> fetchCommandes() async {
-    setState(() { isLoading = true; errorMessage = ''; });
+    setState(() {
+      isLoading = true;
+      errorMessage = '';
+    });
     try {
       final data = await _fetchCommandesResto();
-      setState(() { commandes = data; isLoading = false; });
+      setState(() {
+        commandes = data;
+        isLoading = false;
+      });
       _fadeController.forward(from: 0);
     } catch (e) {
-      setState(() { errorMessage = e.toString(); isLoading = false; });
+      setState(() {
+        errorMessage = e.toString();
+        isLoading = false;
+      });
     }
   }
 
@@ -103,24 +115,32 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
       case 'en attente':
-      case 'pending':     return Colors.orange;
+      case 'pending':
+        return Colors.orange;
       case 'livrée':
-      case 'delivered':   return kSuccess;
+      case 'delivered':
+        return kSuccess;
       case 'annulée':
-      case 'cancelled':   return kError;
-      default:            return kTextSecondary;
+      case 'cancelled':
+        return kError;
+      default:
+        return kTextSecondary;
     }
   }
 
   IconData _statusIcon(String status) {
     switch (status.toLowerCase()) {
       case 'en attente':
-      case 'pending':     return Icons.hourglass_empty_rounded;
+      case 'pending':
+        return Icons.hourglass_empty_rounded;
       case 'livrée':
-      case 'delivered':   return Icons.check_circle_rounded;
+      case 'delivered':
+        return Icons.check_circle_rounded;
       case 'annulée':
-      case 'cancelled':   return Icons.cancel_rounded;
-      default:            return Icons.info_outline_rounded;
+      case 'cancelled':
+        return Icons.cancel_rounded;
+      default:
+        return Icons.info_outline_rounded;
     }
   }
 
@@ -160,8 +180,11 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                     ),
                   ],
                 ),
-                child: const Icon(Icons.refresh_rounded,
-                    color: kTextPrimary, size: 20),
+                child: const Icon(
+                  Icons.refresh_rounded,
+                  color: kTextPrimary,
+                  size: 20,
+                ),
               ),
             ),
           ),
@@ -171,10 +194,10 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
         child: isLoading
             ? _buildLoading()
             : errorMessage.isNotEmpty
-                ? _buildError()
-                : commandes.isEmpty
-                    ? _buildEmpty()
-                    : _buildList(),
+            ? _buildError()
+            : commandes.isEmpty
+            ? _buildEmpty()
+            : _buildList(),
       ),
     );
   }
@@ -188,10 +211,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
           color: kWhite,
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.07),
-              blurRadius: 20,
-            ),
+            BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 20),
           ],
         ),
         child: Column(
@@ -199,9 +219,13 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
           children: [
             const CircularProgressIndicator(color: kOrange, strokeWidth: 2.5),
             SizedBox(height: 2.h),
-            Text('Chargement des commandes…',
-                style: GoogleFonts.poppins(
-                    fontSize: 12.sp, color: kTextSecondary)),
+            Text(
+              'Chargement des commandes…',
+              style: GoogleFonts.poppins(
+                fontSize: 12.sp,
+                color: kTextSecondary,
+              ),
+            ),
           ],
         ),
       ),
@@ -235,20 +259,29 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                   color: kError.withOpacity(0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.wifi_off_rounded,
-                    color: kError, size: 44),
+                child: const Icon(
+                  Icons.wifi_off_rounded,
+                  color: kError,
+                  size: 44,
+                ),
               ),
               SizedBox(height: 2.h),
-              Text('Oups !',
-                  style: GoogleFonts.playfairDisplay(
-                      fontSize: 18.sp,
-                      fontWeight: FontWeight.bold,
-                      color: kTextPrimary)),
+              Text(
+                'Oups !',
+                style: GoogleFonts.playfairDisplay(
+                  fontSize: 18.sp,
+                  fontWeight: FontWeight.bold,
+                  color: kTextPrimary,
+                ),
+              ),
               SizedBox(height: 0.8.h),
               Text(
                 errorMessage.replaceAll('Exception: ', ''),
                 style: GoogleFonts.poppins(
-                    fontSize: 11.sp, color: kTextSecondary, height: 1.5),
+                  fontSize: 11.sp,
+                  color: kTextSecondary,
+                  height: 1.5,
+                ),
                 textAlign: TextAlign.center,
               ),
               SizedBox(height: 2.5.h),
@@ -261,19 +294,26 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                     backgroundColor: kOrange,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.refresh_rounded,
-                          color: kWhite, size: 18),
+                      const Icon(
+                        Icons.refresh_rounded,
+                        color: kWhite,
+                        size: 18,
+                      ),
                       SizedBox(width: 2.w),
-                      Text('Réessayer',
-                          style: GoogleFonts.poppins(
-                              fontSize: 13.sp,
-                              fontWeight: FontWeight.bold,
-                              color: kWhite)),
+                      Text(
+                        'Réessayer',
+                        style: GoogleFonts.poppins(
+                          fontSize: 13.sp,
+                          fontWeight: FontWeight.bold,
+                          color: kWhite,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -297,20 +337,29 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
               color: kOrange.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.receipt_long_rounded,
-                color: kOrange, size: 52),
+            child: const Icon(
+              Icons.receipt_long_rounded,
+              color: kOrange,
+              size: 52,
+            ),
           ),
           SizedBox(height: 2.5.h),
-          Text('Aucune commande',
-              style: GoogleFonts.playfairDisplay(
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.bold,
-                  color: kTextPrimary)),
+          Text(
+            'Aucune commande',
+            style: GoogleFonts.playfairDisplay(
+              fontSize: 20.sp,
+              fontWeight: FontWeight.bold,
+              color: kTextPrimary,
+            ),
+          ),
           SizedBox(height: 0.8.h),
           Text(
             'Les nouvelles commandes\napparaîtront ici.',
             style: GoogleFonts.poppins(
-                fontSize: 12.sp, color: kTextSecondary, height: 1.6),
+              fontSize: 12.sp,
+              color: kTextSecondary,
+              height: 1.6,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -339,7 +388,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
   // ── Card commande ─────────────────────────────────────
   Widget _buildCard(CommandeResto commande, int index) {
     final color = _statusColor(commande.status);
-    final icon  = _statusIcon(commande.status);
+    final icon = _statusIcon(commande.status);
     final initial = commande.clientName.isNotEmpty
         ? commande.clientName[0].toUpperCase()
         : '?';
@@ -390,7 +439,9 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                         color: color.withOpacity(0.12),
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: color.withOpacity(0.3), width: 1.5),
+                          color: color.withOpacity(0.3),
+                          width: 1.5,
+                        ),
                       ),
                       child: Center(
                         child: Text(
@@ -438,8 +489,11 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                         color: kBg,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(Icons.arrow_forward_ios_rounded,
-                          size: 14, color: kTextSecondary),
+                      child: const Icon(
+                        Icons.arrow_forward_ios_rounded,
+                        size: 14,
+                        color: kTextSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -455,12 +509,16 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                     // Badge statut avec icône
                     Container(
                       padding: EdgeInsets.symmetric(
-                          horizontal: 3.w, vertical: 0.7.h),
+                        horizontal: 3.w,
+                        vertical: 0.7.h,
+                      ),
                       decoration: BoxDecoration(
                         color: color.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: color.withOpacity(0.25), width: 1),
+                          color: color.withOpacity(0.25),
+                          width: 1,
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -482,7 +540,9 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                     // Montant
                     Container(
                       padding: EdgeInsets.symmetric(
-                          horizontal: 3.w, vertical: 0.7.h),
+                        horizontal: 3.w,
+                        vertical: 0.7.h,
+                      ),
                       decoration: BoxDecoration(
                         color: kOrange.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(20),

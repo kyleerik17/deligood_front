@@ -8,7 +8,7 @@ import '../session/session_manager.dart';
 class ApiService {
   ApiService._();
 
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String baseUrl = 'https://deligood-backend.onrender.com';
   static const Duration _timeout = Duration(seconds: 20);
 
   // ================= HEADERS =================
@@ -68,8 +68,11 @@ class ApiService {
     return _handle(res);
   }
 
-  static Future put(String endpoint,
-      {Map<String, dynamic>? body, bool auth = true}) async {
+  static Future put(
+    String endpoint, {
+    Map<String, dynamic>? body,
+    bool auth = true,
+  }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
 
     final res = await http
