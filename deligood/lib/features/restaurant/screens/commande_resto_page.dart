@@ -1,9 +1,23 @@
 import 'dart:convert';
 import 'package:deligood/features/restaurant/widgets/commande_detail_page.dart';
 import 'package:deligood/features/restaurant/widgets/commande_resto_model.dart';
-import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sizer/sizer.dart';
+
+// ─────────────────────────────────────────────
+// Design System — DeliGood
+// ─────────────────────────────────────────────
+const kOrange        = Color(0xFFFF6B35);
+const kBg            = Color(0xFFF7F3EF);
+const kWhite         = Colors.white;
+const kTextPrimary   = Color(0xFF1A1A1A);
+const kTextSecondary = Color(0xFF757575);
+const kSuccess       = Color(0xFF4CAF50);
+const kError         = Color(0xFFFF5A5F);
+const kTeal          = Color(0xFF00CCBC);
 
 class CommandeRestoPage extends StatefulWidget {
   const CommandeRestoPage({super.key});
@@ -12,37 +26,54 @@ class CommandeRestoPage extends StatefulWidget {
   State<CommandeRestoPage> createState() => _CommandeRestoPageState();
 }
 
-class _CommandeRestoPageState extends State<CommandeRestoPage> {
+class _CommandeRestoPageState extends State<CommandeRestoPage>
+    with SingleTickerProviderStateMixin {
   List<CommandeResto> commandes = [];
-  bool isLoading = true;
-  String errorMessage = '';
-  String accessToken = '';
+  bool   isLoading     = true;
+  String errorMessage  = '';
+  String accessToken   = '';
+
+  late AnimationController _fadeController;
+  late Animation<double>   _fadeAnimation;
 
   @override
   void initState() {
     super.initState();
+    _fadeController = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600))
+      ..forward();
+    _fadeAnimation =
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
+
     fetchCommandes();
   }
 
-  String getBaseUrl() => "http://127.0.0.1:8000";
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
 
-  Future<List<CommandeResto>> fetchCommandesResto() async {
+  String get _baseUrl => 'http://127.0.0.1:8000';
+
+  // ── API ───────────────────────────────────────────────
+  Future<List<CommandeResto>> _fetchCommandesResto() async {
     final prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('access_token');
-    if (token == null || token.isEmpty) {
-      throw Exception("Token introuvable. Veuillez vous reconnecter.");
-    }
+    final token = prefs.getString('access_token');
 
+    if (token == null || token.isEmpty) {
+      throw Exception('Token introuvable. Veuillez vous reconnecter.');
+    }
     accessToken = token;
 
-    final isJwt = token.startsWith("ey");
+    final isJwt = token.startsWith('ey');
     final headers = {
-      'Content-Type': 'application/json',
+      'Content-Type':  'application/json',
       'Authorization': isJwt ? 'Bearer $token' : 'Token $token',
     };
 
     final response = await http.get(
-      Uri.parse('${getBaseUrl()}/api/orders/orders/restaurant/'),
+      Uri.parse('$_baseUrl/api/orders/orders/restaurant/'),
       headers: headers,
     );
 
@@ -51,301 +82,424 @@ class _CommandeRestoPageState extends State<CommandeRestoPage> {
       return data.map((e) => CommandeResto.fromJson(e)).toList();
     } else if (response.statusCode == 401) {
       await prefs.remove('access_token');
-      throw Exception("Token invalide ou expiré. Veuillez vous reconnecter.");
+      throw Exception('Session expirée. Veuillez vous reconnecter.');
     } else {
-      throw Exception("Erreur API: ${response.statusCode}");
+      throw Exception('Erreur serveur : ${response.statusCode}');
     }
   }
 
   Future<void> fetchCommandes() async {
-    setState(() {
-      isLoading = true;
-      errorMessage = '';
-    });
-
+    setState(() { isLoading = true; errorMessage = ''; });
     try {
-      final data = await fetchCommandesResto();
-      setState(() {
-        commandes = data;
-        isLoading = false;
-      });
+      final data = await _fetchCommandesResto();
+      setState(() { commandes = data; isLoading = false; });
+      _fadeController.forward(from: 0);
     } catch (e) {
-      setState(() {
-        errorMessage = e.toString();
-        isLoading = false;
-      });
+      setState(() { errorMessage = e.toString(); isLoading = false; });
     }
   }
 
+  // ── Couleur & label par statut ────────────────────────
   Color _statusColor(String status) {
     switch (status.toLowerCase()) {
-      case "en attente":
-      case "pending":
-        return CupertinoColors.systemOrange;
-      case "livrée":
-      case "delivered":
-        return CupertinoColors.systemGreen;
-      case "annulée":
-      case "cancelled":
-        return CupertinoColors.systemRed;
-      default:
-        return CupertinoColors.systemGrey;
+      case 'en attente':
+      case 'pending':     return Colors.orange;
+      case 'livrée':
+      case 'delivered':   return kSuccess;
+      case 'annulée':
+      case 'cancelled':   return kError;
+      default:            return kTextSecondary;
     }
   }
 
+  IconData _statusIcon(String status) {
+    switch (status.toLowerCase()) {
+      case 'en attente':
+      case 'pending':     return Icons.hourglass_empty_rounded;
+      case 'livrée':
+      case 'delivered':   return Icons.check_circle_rounded;
+      case 'annulée':
+      case 'cancelled':   return Icons.cancel_rounded;
+      default:            return Icons.info_outline_rounded;
+    }
+  }
+
+  // ════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      backgroundColor: CupertinoColors.systemGroupedBackground,
-      navigationBar: CupertinoNavigationBar(
-        backgroundColor: CupertinoColors.systemBackground.withOpacity(0.9),
-        border: const Border(
-          bottom: BorderSide(
-            color: CupertinoColors.separator,
-            width: 0.5,
-          ),
-        ),
-        middle: const Text(
+    return Scaffold(
+      backgroundColor: kBg,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        title: Text(
           'Commandes',
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            fontSize: 17,
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: kTextPrimary,
           ),
         ),
-        trailing: CupertinoButton(
-          padding: EdgeInsets.zero,
-          onPressed: fetchCommandes,
-          child: const Icon(
-            CupertinoIcons.refresh,
-            size: 22,
-          ),
-        ),
-      ),
-      child: SafeArea(
-        child: isLoading
-            ? _buildLoadingState()
-            : errorMessage.isNotEmpty
-                ? _buildErrorState()
-                : commandes.isEmpty
-                    ? _buildEmptyState()
-                    : _buildCommandesList(),
-      ),
-    );
-  }
-
-  Widget _buildLoadingState() {
-    return const Center(
-      child: CupertinoActivityIndicator(radius: 14),
-    );
-  }
-
-  Widget _buildErrorState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(
-              CupertinoIcons.exclamationmark_triangle,
-              size: 64,
-              color: CupertinoColors.systemRed,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              errorMessage,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 15,
-                color: CupertinoColors.secondaryLabel,
+        centerTitle: true,
+        actions: [
+          Padding(
+            padding: EdgeInsets.only(right: 3.w),
+            child: GestureDetector(
+              onTap: fetchCommandes,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: kWhite,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 8,
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.refresh_rounded,
+                    color: kTextPrimary, size: 20),
               ),
             ),
-            const SizedBox(height: 24),
-            CupertinoButton.filled(
-              onPressed: fetchCommandes,
-              child: const Text('Réessayer'),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: isLoading
+            ? _buildLoading()
+            : errorMessage.isNotEmpty
+                ? _buildError()
+                : commandes.isEmpty
+                    ? _buildEmpty()
+                    : _buildList(),
+      ),
+    );
+  }
+
+  // ── Loading ───────────────────────────────────────────
+  Widget _buildLoading() {
+    return Center(
+      child: Container(
+        padding: EdgeInsets.all(6.w),
+        decoration: BoxDecoration(
+          color: kWhite,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.07),
+              blurRadius: 20,
             ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(color: kOrange, strokeWidth: 2.5),
+            SizedBox(height: 2.h),
+            Text('Chargement des commandes…',
+                style: GoogleFonts.poppins(
+                    fontSize: 12.sp, color: kTextSecondary)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildEmptyState() {
+  // ── Erreur ────────────────────────────────────────────
+  Widget _buildError() {
+    return Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 8.w),
+        child: Container(
+          padding: EdgeInsets.all(6.w),
+          decoration: BoxDecoration(
+            color: kWhite,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.07),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: kError.withOpacity(0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.wifi_off_rounded,
+                    color: kError, size: 44),
+              ),
+              SizedBox(height: 2.h),
+              Text('Oups !',
+                  style: GoogleFonts.playfairDisplay(
+                      fontSize: 18.sp,
+                      fontWeight: FontWeight.bold,
+                      color: kTextPrimary)),
+              SizedBox(height: 0.8.h),
+              Text(
+                errorMessage.replaceAll('Exception: ', ''),
+                style: GoogleFonts.poppins(
+                    fontSize: 11.sp, color: kTextSecondary, height: 1.5),
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: 2.5.h),
+              SizedBox(
+                width: double.infinity,
+                height: 5.5.h,
+                child: ElevatedButton(
+                  onPressed: fetchCommandes,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kOrange,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.refresh_rounded,
+                          color: kWhite, size: 18),
+                      SizedBox(width: 2.w),
+                      Text('Réessayer',
+                          style: GoogleFonts.poppins(
+                              fontSize: 13.sp,
+                              fontWeight: FontWeight.bold,
+                              color: kWhite)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Empty ─────────────────────────────────────────────
+  Widget _buildEmpty() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            CupertinoIcons.doc_text,
-            size: 80,
-            color: CupertinoColors.systemGrey.withOpacity(0.5),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'Aucune commande',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w600,
-              color: CupertinoColors.label,
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: kOrange.withOpacity(0.08),
+              shape: BoxShape.circle,
             ),
+            child: const Icon(Icons.receipt_long_rounded,
+                color: kOrange, size: 52),
           ),
-          const SizedBox(height: 8),
-          const Text(
-            'Les commandes apparaîtront ici',
-            style: TextStyle(
-              fontSize: 15,
-              color: CupertinoColors.secondaryLabel,
-            ),
+          SizedBox(height: 2.5.h),
+          Text('Aucune commande',
+              style: GoogleFonts.playfairDisplay(
+                  fontSize: 20.sp,
+                  fontWeight: FontWeight.bold,
+                  color: kTextPrimary)),
+          SizedBox(height: 0.8.h),
+          Text(
+            'Les nouvelles commandes\napparaîtront ici.',
+            style: GoogleFonts.poppins(
+                fontSize: 12.sp, color: kTextSecondary, height: 1.6),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildCommandesList() {
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        CupertinoSliverRefreshControl(
-          onRefresh: fetchCommandes,
+  // ── Liste ─────────────────────────────────────────────
+  Widget _buildList() {
+    return FadeTransition(
+      opacity: _fadeAnimation,
+      child: RefreshIndicator(
+        color: kOrange,
+        backgroundColor: kWhite,
+        onRefresh: fetchCommandes,
+        child: ListView.builder(
+          physics: const BouncingScrollPhysics(),
+          padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+          itemCount: commandes.length,
+          itemBuilder: (_, i) => _buildCard(commandes[i], i),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildCommandeCard(commandes[index]),
-              childCount: commandes.length,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildCommandeCard(CommandeResto commande) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: CupertinoColors.systemBackground,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: CupertinoColors.black.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+  // ── Card commande ─────────────────────────────────────
+  Widget _buildCard(CommandeResto commande, int index) {
+    final color = _statusColor(commande.status);
+    final icon  = _statusIcon(commande.status);
+    final initial = commande.clientName.isNotEmpty
+        ? commande.clientName[0].toUpperCase()
+        : '?';
+
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: Duration(milliseconds: 400 + index * 80),
+      curve: Curves.easeOut,
+      builder: (_, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, 20 * (1 - value)),
+          child: child,
+        ),
       ),
-      child: CupertinoButton(
-        padding: EdgeInsets.zero,
-        onPressed: () {
-          Navigator.of(context).push(
-            CupertinoPageRoute(
-              builder: (_) => CommandeDetailPage(commande: commande),
-            ),
-          );
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  // Avatar avec initiale
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: _statusColor(commande.status).withOpacity(0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Center(
-                      child: Text(
-                        commande.clientName.isNotEmpty
-                            ? commande.clientName[0].toUpperCase()
-                            : '?',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          color: _statusColor(commande.status),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  // Infos
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          commande.clientName,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            color: CupertinoColors.label,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '${commande.items.length} article${commande.items.length > 1 ? 's' : ''}',
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: CupertinoColors.secondaryLabel,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Chevron
-                  const Icon(
-                    CupertinoIcons.chevron_right,
-                    size: 18,
-                    color: CupertinoColors.tertiaryLabel,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Divider
-              Container(
-                height: 0.5,
-                color: CupertinoColors.separator,
-              ),
-              const SizedBox(height: 12),
-              // Status et montant
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _statusColor(commande.status).withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      commande.status,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: _statusColor(commande.status),
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${commande.total.toStringAsFixed(0)} FCFA',
-                    style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                      color: CupertinoColors.activeBlue,
-                    ),
-                  ),
-                ],
+      child: GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CommandeDetailPage(commande: commande),
+          ),
+        ),
+        child: Container(
+          margin: EdgeInsets.only(bottom: 2.h),
+          decoration: BoxDecoration(
+            color: kWhite,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 16,
+                offset: const Offset(0, 4),
               ),
             ],
+          ),
+          child: Padding(
+            padding: EdgeInsets.all(4.w),
+            child: Column(
+              children: [
+                // ── Header : avatar + nom + chevron ──
+                Row(
+                  children: [
+                    // Avatar initiale
+                    Container(
+                      width: 12.w,
+                      height: 12.w,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: color.withOpacity(0.3), width: 1.5),
+                      ),
+                      child: Center(
+                        child: Text(
+                          initial,
+                          style: GoogleFonts.playfairDisplay(
+                            fontSize: 16.sp,
+                            fontWeight: FontWeight.bold,
+                            color: color,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    SizedBox(width: 3.w),
+
+                    // Nom + nb articles
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            commande.clientName,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13.sp,
+                              fontWeight: FontWeight.w700,
+                              color: kTextPrimary,
+                            ),
+                          ),
+                          SizedBox(height: 0.3.h),
+                          Text(
+                            '${commande.items.length} article${commande.items.length > 1 ? 's' : ''}',
+                            style: GoogleFonts.poppins(
+                              fontSize: 10.5.sp,
+                              color: kTextSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Chevron
+                    Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: kBg,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.arrow_forward_ios_rounded,
+                          size: 14, color: kTextSecondary),
+                    ),
+                  ],
+                ),
+
+                SizedBox(height: 1.5.h),
+                Divider(color: Colors.grey.shade100, height: 1),
+                SizedBox(height: 1.5.h),
+
+                // ── Footer : badge statut + montant ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Badge statut avec icône
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 3.w, vertical: 0.7.h),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: color.withOpacity(0.25), width: 1),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(icon, color: color, size: 13),
+                          const SizedBox(width: 4),
+                          Text(
+                            commande.status,
+                            style: GoogleFonts.poppins(
+                              fontSize: 10.sp,
+                              fontWeight: FontWeight.w600,
+                              color: color,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Montant
+                    Container(
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 3.w, vertical: 0.7.h),
+                      decoration: BoxDecoration(
+                        color: kOrange.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        '${commande.total.toStringAsFixed(0)} FCFA',
+                        style: GoogleFonts.poppins(
+                          fontSize: 12.sp,
+                          fontWeight: FontWeight.w700,
+                          color: kOrange,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

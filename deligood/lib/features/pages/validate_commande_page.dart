@@ -26,7 +26,7 @@ class _ValidateCommandePageState extends State<ValidateCommandePage> {
     setState(() => loading = true);
 
     try {
-      final response = await Api.post(
+      final response = await ApiService.post(
         '/orders/create/',
         body: {
           'menu_item_id': widget.item.id,

@@ -4,16 +4,15 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:deligood/features/auth/screens/login/login_page.dart';
 
-
 class LogoutService {
-  static final String logoutUrl = '${Api.baseUrl}/api/logout/';
+  static final String logoutUrl = '${ApiService.baseUrl}/api/logout/';
 
   static Future<void> performLogout(
     BuildContext context, {
     int? orderId,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token'); // <-- uniformisé
+    final token = prefs.getString('access_token');
 
     if (token != null) {
       try {
@@ -26,27 +25,25 @@ class LogoutService {
         );
 
         if (response.statusCode == 200) {
-          debugPrint("Logout réussi");
+          debugPrint('Logout réussi');
         } else {
-          debugPrint("Erreur logout: ${response.statusCode}");
+          debugPrint('Erreur logout: ${response.statusCode}');
         }
       } catch (e) {
-        debugPrint("Erreur réseau logout: $e");
+        debugPrint('Erreur réseau logout: $e');
       }
     }
 
-    // Supprime toutes les données locales
     await prefs.clear();
 
-    // Redirection vers LoginPage
     Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => LoginPage(
-          onLoginSuccess: (String type) {},
-          orderId: orderId,
-        ),
-      ),
-    );
+  context,
+  MaterialPageRoute(
+    builder: (context) => LoginScreen(
+      onLoginSuccess: (String type) {},
+      orderId: orderId,
+    ),
+  ),
+);
   }
 }

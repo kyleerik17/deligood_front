@@ -275,7 +275,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       if (token == null) throw Exception("Utilisateur non connecté");
 
       final response = await http.post(
-        Uri.parse('${Api.baseUrl}/api/orders/cart/add/'),
+        Uri.parse('${ApiService.baseUrl}/api/orders/cart/add/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Token $token',

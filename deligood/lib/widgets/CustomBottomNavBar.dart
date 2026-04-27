@@ -1,9 +1,9 @@
 import 'package:deligood/features/client/screens/Home_screen.dart';
+import 'package:deligood/features/client/screens/RestaurantPage.dart';
 import 'package:deligood/features/restaurant/screens/commande_resto_page.dart';
 import 'package:flutter/material.dart';
 import 'package:deligood/features/pages/panier_page.dart';
 import 'package:deligood/features/pages/profil_page.dart';
-import 'package:deligood/features/livreur/screens/pages/RestaurantPage.dart';
 import 'package:deligood/features/livreur/screens/pages/Home_livreur.dart';
 import 'package:deligood/features/livreur/screens/pages/historique_liv.dart';
 import 'package:deligood/features/livreur/screens/course_page.dart';

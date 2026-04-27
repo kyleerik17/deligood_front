@@ -1,26 +1,19 @@
-import 'dart:async';
+import 'package:deligood/features/auth/screens/login/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Pages
-import 'package:deligood/features/auth/screens/login/login_page.dart';
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Récupération sécurisée du orderId depuis SharedPreferences
-  final prefs = await SharedPreferences.getInstance();
-  final orderId = prefs.getInt('order_id') ?? 0; // 0 si non trouvé
-
-  runApp(MyApp(orderId: orderId));
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  final int orderId;
-
-  const MyApp({super.key, required this.orderId});
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -28,9 +21,8 @@ class MyApp extends StatelessWidget {
       builder: (context, orientation, deviceType) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: 'DéliGood',
-          theme: ThemeData(primarySwatch: Colors.blue),
-          home: AuthWrapper(orderId: orderId),
+          title: 'DeliGood',
+          home: const AuthWrapper(),
         );
       },
     );
@@ -38,8 +30,7 @@ class MyApp extends StatelessWidget {
 }
 
 class AuthWrapper extends StatefulWidget {
-  final int orderId; // Id de la commande à suivre
-  const AuthWrapper({super.key, required this.orderId});
+  const AuthWrapper({super.key});
 
   @override
   State<AuthWrapper> createState() => _AuthWrapperState();
@@ -47,39 +38,65 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   String? userRole;
+  int orderId = 0;
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _checkLogin();
+    _init();
   }
 
-  // Vérifie si l'utilisateur est déjà connecté
-  Future<void> _checkLogin() async {
+  // 🔥 CHARGE TOUT UNE SEULE FOIS PROPREMENT
+  Future<void> _init() async {
     final prefs = await SharedPreferences.getInstance();
+
     final token = prefs.getString('access_token');
     final type = prefs.getString('user_type');
+    final storedOrderId = prefs.getInt('order_id') ?? 0;
 
-    // Petite pause pour le splash/chargement
-    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
 
     setState(() {
-      // Si token et type existent, l'utilisateur est connecté
-      if (token != null && type != null) {
-        userRole = type.toLowerCase();
+      orderId = storedOrderId;
+
+      if (token != null &&
+          token.isNotEmpty &&
+          type != null &&
+          type.isNotEmpty) {
+        userRole = type.toLowerCase().trim();
+      } else {
+        userRole = null;
       }
+
       isLoading = false;
     });
   }
 
-  // Callback après login réussi
-  void _onLoginSuccess(String type) async {
+  // 🔥 APPELÉ APRÈS LOGIN
+  Future<void> onLoginSuccess(String type) async {
     final prefs = await SharedPreferences.getInstance();
-    final savedToken = prefs.getString('access_token'); // déjà stocké par LoginPage
+
+    await prefs.setString('user_type', type.toLowerCase().trim());
+
+    if (!mounted) return;
 
     setState(() {
-      userRole = type.toLowerCase();
+      userRole = type.toLowerCase().trim();
+    });
+  }
+
+  // 🔥 LOGOUT CLEAN
+  Future<void> logout() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.remove('access_token');
+    await prefs.remove('user_type');
+
+    if (!mounted) return;
+
+    setState(() {
+      userRole = null;
     });
   }
 
@@ -91,18 +108,16 @@ class _AuthWrapperState extends State<AuthWrapper> {
       );
     }
 
-    if (userRole != null) {
-      // Utilisateur connecté → affiche la barre de navigation
-      return CustomBottomNavBar(
-        userRole: userRole!,
-        orderId: widget.orderId,
-      );
-    } else {
-      // Non connecté → affiche la page de login
-      return LoginPage(
-        orderId: widget.orderId,
-        onLoginSuccess: _onLoginSuccess,
-      );
-    }
+    final loggedIn = userRole != null;
+
+    return loggedIn
+        ? CustomBottomNavBar(
+            userRole: userRole!,
+            orderId: orderId,
+          )
+        : LoginScreen(
+            orderId: orderId,
+            onLoginSuccess: onLoginSuccess,
+          );
   }
 }

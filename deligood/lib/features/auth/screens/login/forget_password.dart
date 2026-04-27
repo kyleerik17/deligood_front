@@ -1,8 +1,20 @@
 import 'package:deligood/core/network/api.dart';
+import 'package:deligood/core/session/auth_service.dart';
 import 'package:deligood/features/auth/screens/login/confirm_password.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:sizer/sizer.dart';
+
+// ─────────────────────────────────────────────
+// Design System — DeliGood
+// ─────────────────────────────────────────────
+const kOrange        = Color(0xFFFF6B35);
+const kBg            = Color(0xFFF7F3EF);
+const kWhite         = Colors.white;
+const kTextPrimary   = Color(0xFF1A1A1A);
+const kTextSecondary = Color(0xFF757575);
+const kError         = Color(0xFFFF5A5F);
 
 class ForgetPasswordPage extends StatefulWidget {
   const ForgetPasswordPage({super.key});
@@ -12,29 +24,41 @@ class ForgetPasswordPage extends StatefulWidget {
 }
 
 class _ForgetPasswordPageState extends State<ForgetPasswordPage>
-    with SingleTickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
+    with TickerProviderStateMixin {
 
-  final phoneController = TextEditingController();
+  final _formKey           = GlobalKey<FormState>();
+  final phoneController    = TextEditingController();
   final firstNameController = TextEditingController();
-  final lastNameController = TextEditingController();
+  final lastNameController  = TextEditingController();
 
-  bool isLoading = false;
+  bool isLoading      = false;
   String? errorMessage;
 
+  late AnimationController _fadeController;
+  late AnimationController _slideController;
   late AnimationController _shakeController;
+  late Animation<double>   _fadeAnimation;
+  late Animation<Offset>   _slideAnimation;
 
   @override
   void initState() {
     super.initState();
-    _shakeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 500),
-    );
+    _fadeController  = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _slideController = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+    _shakeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
+
+    _fadeAnimation  = CurvedAnimation(parent: _fadeController,  curve: Curves.easeIn);
+    _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
+
+    _fadeController.forward();
+    _slideController.forward();
   }
 
   @override
   void dispose() {
+    _fadeController.dispose();
+    _slideController.dispose();
     _shakeController.dispose();
     phoneController.dispose();
     firstNameController.dispose();
@@ -42,40 +66,53 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage>
     super.dispose();
   }
 
-  // =====================================================
-  // VERIFY IDENTITY
-  // =====================================================
+  void _shake() {
+    _shakeController.reset();
+    _shakeController.forward();
+  }
+
+  String _normalize(String v) =>
+      v.trim().replaceAll(RegExp(r'[ \-\(\)]'), '');
+
   Future<void> _verifyIdentity() async {
-    // Reset error
     setState(() => errorMessage = null);
 
     if (!_formKey.currentState!.validate()) {
-      _playShakeAnimation();
+      _shake();
       return;
     }
 
     setState(() => isLoading = true);
 
-    final phone = _normalizePhoneNumber(phoneController.text);
-    final firstName = firstNameController.text.trim();
-    final lastName = lastNameController.text.trim();
+    final phone = _normalize(phoneController.text);
+    final first = firstNameController.text.trim();
+    final last  = lastNameController.text.trim();
 
     try {
-      final allowed = await AuthApi.verifyIdentity(
+      final ok = await AuthService.verifyIdentity(
         phone: phone,
-        firstName: firstName,
-        lastName: lastName,
+        firstName: first,
+        lastName: last,
       );
 
       if (!mounted) return;
 
-      if (allowed) {
-        _showSuccess('Identité confirmée');
-        
-        // Petit délai pour voir le message de succès
-        await Future.delayed(const Duration(milliseconds: 800));
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white, size: 20),
+              const SizedBox(width: 10),
+              Text('Identité validée', style: GoogleFonts.poppins(fontSize: 13)),
+            ]),
+            backgroundColor: const Color(0xFF4CAF50),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: EdgeInsets.all(4.w),
+          ),
+        );
 
-        if (!mounted) return;
+        await Future.delayed(const Duration(milliseconds: 700));
 
         Navigator.pushReplacement(
           context,
@@ -84,524 +121,363 @@ class _ForgetPasswordPageState extends State<ForgetPasswordPage>
           ),
         );
       } else {
-        _handleError('Les informations fournies sont incorrectes');
+        _setError('Informations incorrectes');
       }
     } catch (e) {
-      _handleError(
-        'Impossible de vérifier votre identité. Vérifiez votre connexion.',
-      );
-      debugPrint("Erreur vérification identité: $e");
+      _setError('Erreur serveur / connexion');
     } finally {
       if (mounted) setState(() => isLoading = false);
     }
   }
 
-  // =====================================================
-  // HANDLE ERROR
-  // =====================================================
-  void _handleError(String message) {
-    setState(() => errorMessage = message);
-    _playShakeAnimation();
+  void _setError(String msg) {
+    setState(() => errorMessage = msg);
+    _shake();
     HapticFeedback.mediumImpact();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFFE53935),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: EdgeInsets.all(4.w),
-        duration: const Duration(seconds: 4),
-      ),
-    );
   }
 
-  // =====================================================
-  // SHOW SUCCESS
-  // =====================================================
-  void _showSuccess(String message) {
-    HapticFeedback.lightImpact();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle, color: Colors.white),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                message,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF4CAF50),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: EdgeInsets.all(4.w),
-        duration: const Duration(milliseconds: 800),
-      ),
-    );
-  }
-
-  // =====================================================
-  // SHAKE ANIMATION
-  // =====================================================
-  void _playShakeAnimation() {
-    _shakeController.reset();
-    _shakeController.forward();
-  }
-
-  // =====================================================
-  // NORMALIZE PHONE NUMBER
-  // =====================================================
-  String _normalizePhoneNumber(String phone) {
-    return phone
-        .trim()
-        .replaceAll(' ', '')
-        .replaceAll('-', '')
-        .replaceAll('(', '')
-        .replaceAll(')', '');
-  }
-
-  // =====================================================
-  // BUILD UI
-  // =====================================================
+  // ════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Color(0xFF6A1B9A),
-              Color(0xFF8E24AA),
-              Color(0xFFAB47BC),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              padding: EdgeInsets.symmetric(horizontal: 6.w),
-              child: Column(
-                children: [
-                  SizedBox(height: 2.h),
-                  _buildBackButton(),
-                  SizedBox(height: 4.h),
-                  _buildHeader(),
-                  SizedBox(height: 5.h),
-                  _buildFormCard(),
-                  SizedBox(height: 3.h),
-                ],
+      backgroundColor: kBg,
+      body: Stack(
+        children: [
+          // ── Bulles décoratives ──
+          Positioned(
+            top: -60, right: -60,
+            child: Container(
+              width: 220, height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: kOrange.withOpacity(0.08),
               ),
             ),
           ),
-        ),
+          Positioned(
+            top: 80, right: 30,
+            child: Container(
+              width: 80, height: 80,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: kOrange.withOpacity(0.12),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -40, left: -40,
+            child: Container(
+              width: 160, height: 160,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: kOrange.withOpacity(0.06),
+              ),
+            ),
+          ),
+
+          // ── Contenu ──
+          SafeArea(
+            child: FadeTransition(
+              opacity: _fadeAnimation,
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: EdgeInsets.symmetric(horizontal: 6.w),
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      SizedBox(height: 2.h),
+
+                      // ── Bouton retour ──
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: kWhite,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.06),
+                                blurRadius: 8,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back_ios_new,
+                            size: 16,
+                            color: kTextPrimary,
+                          ),
+                        ),
+                      ),
+
+                      SizedBox(height: 3.h),
+
+                      // ── Header ──
+                      _buildHeader(),
+
+                      SizedBox(height: 4.h),
+
+                      // ── Formulaire ──
+                      _buildForm(),
+
+                      SizedBox(height: 4.h),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  // =====================================================
-  // BACK BUTTON
-  // =====================================================
-  Widget _buildBackButton() {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-    );
-  }
-
-  // =====================================================
-  // HEADER
-  // =====================================================
+  // ── Header ────────────────────────────────────────────
   Widget _buildHeader() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Icône dans container arrondi (même style que Register)
         Container(
-          padding: EdgeInsets.all(4.w),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            shape: BoxShape.circle,
+            color: kOrange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(16),
           ),
-          child: Icon(
-            Icons.lock_reset,
-            size: 60,
-            color: Colors.white,
-          ),
+          child: const Icon(Icons.lock_reset_rounded, color: kOrange, size: 36),
         ),
         SizedBox(height: 2.h),
         Text(
-          'PIN oublié ?',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 26.sp,
+          'Récupération\nde PIN',
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 28.sp,
             fontWeight: FontWeight.bold,
-            color: Colors.white,
-            letterSpacing: 0.5,
+            color: kTextPrimary,
+            height: 1.15,
           ),
         ),
-        SizedBox(height: 1.h),
+        SizedBox(height: 0.8.h),
         Text(
-          'Vérifiez votre identité pour réinitialiser votre PIN',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 12.sp,
-            color: Colors.white.withOpacity(0.9),
-            fontWeight: FontWeight.w500,
-          ),
+          'Vérifiez votre identité pour continuer',
+          style: GoogleFonts.poppins(fontSize: 12.sp, color: kTextSecondary),
         ),
       ],
     );
   }
 
-  // =====================================================
-  // FORM CARD
-  // =====================================================
-  Widget _buildFormCard() {
-    return Container(
-      padding: EdgeInsets.all(6.w),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 30,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Vérification d\'identité',
-            style: TextStyle(
-              fontSize: 18.sp,
-              fontWeight: FontWeight.bold,
-              color: const Color(0xFF2D3142),
-            ),
-          ),
-          SizedBox(height: 1.h),
-          Text(
-            'Entrez vos informations pour continuer',
-            style: TextStyle(
-              fontSize: 11.sp,
-              color: Colors.grey.shade600,
-            ),
-          ),
-          SizedBox(height: 3.h),
-
-          // Error banner
-          if (errorMessage != null) ...[
-            _buildErrorBanner(),
-            SizedBox(height: 2.h),
-          ],
-
-          // Phone field
-          _buildPhoneField(),
-          SizedBox(height: 2.h),
-
-          // First name field
-          _buildFirstNameField(),
-          SizedBox(height: 2.h),
-
-          // Last name field
-          _buildLastNameField(),
-          SizedBox(height: 4.h),
-
-          // Submit button
-          _buildSubmitButton(),
-        ],
-      ),
-    );
-  }
-
-  // =====================================================
-  // ERROR BANNER
-  // =====================================================
-  Widget _buildErrorBanner() {
+  // ── Formulaire ────────────────────────────────────────
+  Widget _buildForm() {
     return AnimatedBuilder(
       animation: _shakeController,
-      builder: (context, child) {
-        final offset = _shakeController.value * 10;
-        return Transform.translate(
-          offset: Offset(offset * (1 - _shakeController.value * 2).sign, 0),
-          child: child,
-        );
-      },
-      child: Container(
-        padding: EdgeInsets.all(3.w),
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFEBEE),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE53935).withOpacity(0.3)),
+      builder: (context, child) => Transform.translate(
+        offset: Offset(
+          _shakeController.value * 8 * (1 - _shakeController.value * 2).sign,
+          0,
         ),
-        child: Row(
-          children: [
-            const Icon(Icons.error_outline, color: Color(0xFFE53935), size: 24),
-            SizedBox(width: 3.w),
-            Expanded(
-              child: Text(
-                errorMessage!,
-                style: TextStyle(
-                  fontSize: 11.sp,
-                  color: const Color(0xFFE53935),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+        child: child,
+      ),
+      child: Container(
+        padding: EdgeInsets.all(5.w),
+        decoration: BoxDecoration(
+          color: kWhite,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
-      ),
-    );
-  }
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
 
-  // =====================================================
-  // PHONE FIELD
-  // =====================================================
-  Widget _buildPhoneField() {
-    return TextFormField(
-      controller: phoneController,
-      keyboardType: TextInputType.phone,
-      style: TextStyle(
-        fontSize: 14.sp,
-        fontWeight: FontWeight.w500,
-        color: const Color(0xFF2D3142),
-      ),
-      inputFormatters: [
-        FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s()]')),
-      ],
-      decoration: InputDecoration(
-        labelText: 'Numéro de téléphone',
-        hintText: '+225 XX XX XX XX XX',
-        prefixIcon: const Icon(Icons.phone, color: Color(0xFF6A1B9A)),
-        labelStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600),
-        hintStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade400),
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFF6A1B9A), width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
-        ),
-        contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
-      ),
-      validator: (v) {
-        if (v == null || v.isEmpty) {
-          return 'Numéro de téléphone requis';
-        }
-        final normalized = _normalizePhoneNumber(v);
-        if (normalized.length < 8) {
-          return 'Numéro de téléphone invalide';
-        }
-        return null;
-      },
-    );
-  }
+              // ── Bannière erreur ──
+              if (errorMessage != null) ...[
+                _buildErrorBanner(),
+                SizedBox(height: 2.h),
+              ],
 
-  // =====================================================
-  // FIRST NAME FIELD
-  // =====================================================
-  Widget _buildFirstNameField() {
-    return TextFormField(
-      controller: firstNameController,
-      textCapitalization: TextCapitalization.words,
-      style: TextStyle(
-        fontSize: 14.sp,
-        fontWeight: FontWeight.w500,
-        color: const Color(0xFF2D3142),
-      ),
-      decoration: InputDecoration(
-        labelText: 'Prénom',
-        hintText: 'Votre prénom',
-        prefixIcon: const Icon(Icons.person, color: Color(0xFF6A1B9A)),
-        labelStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600),
-        hintStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade400),
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFF6A1B9A), width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
-        ),
-        contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
-      ),
-      validator: (v) {
-        if (v == null || v.isEmpty) {
-          return 'Prénom requis';
-        }
-        if (v.trim().length < 2) {
-          return 'Le prénom doit contenir au moins 2 caractères';
-        }
-        return null;
-      },
-    );
-  }
+              // ── Section label ──
+              _buildSectionTitle('Informations personnelles', Icons.person_outline_rounded),
+              SizedBox(height: 1.5.h),
 
-  // =====================================================
-  // LAST NAME FIELD
-  // =====================================================
-  Widget _buildLastNameField() {
-    return TextFormField(
-      controller: lastNameController,
-      textCapitalization: TextCapitalization.characters,
-      style: TextStyle(
-        fontSize: 14.sp,
-        fontWeight: FontWeight.w500,
-        color: const Color(0xFF2D3142),
-      ),
-      decoration: InputDecoration(
-        labelText: 'Nom',
-        hintText: 'Votre nom',
-        prefixIcon: const Icon(Icons.person_outline, color: Color(0xFF6A1B9A)),
-        labelStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade600),
-        hintStyle: TextStyle(fontSize: 12.sp, color: Colors.grey.shade400),
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFF6A1B9A), width: 2),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: const BorderSide(color: Color(0xFFE53935), width: 2),
-        ),
-        contentPadding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
-      ),
-      validator: (v) {
-        if (v == null || v.isEmpty) {
-          return 'Nom requis';
-        }
-        if (v.trim().length < 2) {
-          return 'Le nom doit contenir au moins 2 caractères';
-        }
-        return null;
-      },
-    );
-  }
+              _buildField(
+                controller: firstNameController,
+                label: 'Prénom',
+                icon: Icons.person_rounded,
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Champ requis';
+                  if (v.trim().length < 2) return 'Trop court';
+                  return null;
+                },
+              ),
+              SizedBox(height: 1.5.h),
+              _buildField(
+                controller: lastNameController,
+                label: 'Nom',
+                icon: Icons.person_outline_rounded,
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Champ requis';
+                  if (v.trim().length < 2) return 'Trop court';
+                  return null;
+                },
+              ),
 
-  // =====================================================
-  // SUBMIT BUTTON
-  // =====================================================
-  Widget _buildSubmitButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 6.h,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : _verifyIdentity,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF6A1B9A),
-          disabledBackgroundColor: Colors.grey.shade300,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          elevation: 0,
-        ),
-        child: isLoading
-            ? const SizedBox(
-                height: 24,
-                width: 24,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2.5,
-                ),
-              )
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Vérifier mon identité',
-                    style: TextStyle(
-                      fontSize: 15.sp,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
+              SizedBox(height: 3.h),
+
+              _buildSectionTitle('Contact', Icons.phone_outlined),
+              SizedBox(height: 1.5.h),
+
+              _buildField(
+                controller: phoneController,
+                label: 'Numéro de téléphone',
+                icon: Icons.phone_rounded,
+                keyboard: TextInputType.phone,
+                formatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s()]'))],
+                validator: (v) {
+                  if (v == null || v.isEmpty) return 'Champ requis';
+                  if (_normalize(v).length < 8) return 'Numéro invalide';
+                  return null;
+                },
+              ),
+
+              SizedBox(height: 3.h),
+
+              // ── Bouton vérifier ──
+              SizedBox(
+                width: double.infinity,
+                height: 6.5.h,
+                child: ElevatedButton(
+                  onPressed: isLoading ? null : _verifyIdentity,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kOrange,
+                    disabledBackgroundColor: Colors.grey.shade300,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-                  SizedBox(width: 2.w),
-                  const Icon(
-                    Icons.arrow_forward,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                ],
+                  child: isLoading
+                      ? const SizedBox(
+                          width: 24, height: 24,
+                          child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2.5))
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Vérifier mon identité',
+                              style: GoogleFonts.poppins(
+                                fontSize: 14.sp,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 2.w),
+                            const Icon(Icons.arrow_forward_rounded,
+                                color: Colors.white, size: 20),
+                          ],
+                        ),
+                ),
               ),
+            ],
+          ),
+        ),
       ),
     );
+  }
+
+  // ── Bannière erreur ───────────────────────────────────
+  Widget _buildErrorBanner() {
+    return Container(
+      padding: EdgeInsets.all(3.w),
+      decoration: BoxDecoration(
+        color: kError.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kError.withOpacity(0.3)),
+      ),
+      child: Row(children: [
+        const Icon(Icons.error_outline_rounded, color: kError, size: 20),
+        SizedBox(width: 2.5.w),
+        Expanded(
+          child: Text(
+            errorMessage!,
+            style: GoogleFonts.poppins(
+              fontSize: 12.sp, color: kError, fontWeight: FontWeight.w500),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  // ── Champ de saisie — style Design System ─────────────
+  Widget _buildField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType keyboard = TextInputType.text,
+    List<TextInputFormatter>? formatters,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboard,
+      inputFormatters: formatters,
+      validator: validator,
+      style: GoogleFonts.poppins(fontSize: 13.sp, color: kTextPrimary),
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: kOrange, size: 22),
+        labelStyle: GoogleFonts.poppins(fontSize: 12.sp, color: Colors.grey.shade500),
+        errorStyle: GoogleFonts.poppins(fontSize: 10.sp, color: kError),
+        filled: true,
+        fillColor: Colors.white,
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: kOrange, width: 1.5),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: kError),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: kError, width: 1.5),
+        ),
+        contentPadding: EdgeInsets.symmetric(vertical: 1.8.h, horizontal: 4.w),
+      ),
+    );
+  }
+
+  // ── Label de section ──────────────────────────────────
+  Widget _buildSectionTitle(String title, IconData icon) {
+    return Row(children: [
+      Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: kOrange.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Icon(icon, color: kOrange, size: 16),
+      ),
+      SizedBox(width: 2.w),
+      Text(
+        title,
+        style: GoogleFonts.poppins(
+          fontSize: 13.sp, fontWeight: FontWeight.w600, color: kTextPrimary),
+      ),
+    ]);
   }
 }

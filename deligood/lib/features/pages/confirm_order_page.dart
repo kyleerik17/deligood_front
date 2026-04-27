@@ -1,3 +1,4 @@
+import 'package:deligood/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
@@ -69,7 +70,7 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
     setState(() => isLoading = true);
 
     try {
-      final response = await RestaurantApi.confirmOrder(
+      final response = await PanierApi.confirmOrder( // ✅ RestaurantApi → PanierApi
         firstName: widget.firstName,
         lastName: widget.lastName,
         phoneNumber: widget.phoneNumber,
@@ -78,13 +79,10 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
 
       if (!mounted) return;
 
-      // Récupérer l'ID de la commande depuis la réponse
       final orderId = response['orderId'] ?? response['id'] ?? 0;
 
-      // Montrer le dialog de succès
       await _showSuccessDialog();
 
-      // Navigation automatique vers la page de suivi
       if (mounted && orderId > 0) {
         Navigator.pushReplacement(
           context,
@@ -93,7 +91,6 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
           ),
         );
       } else {
-        // Si pas d'orderId, retour à l'accueil
         Navigator.popUntil(context, (route) => route.isFirst);
       }
     } catch (e) {
@@ -245,7 +242,8 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
                 width: 100,
                 child: LinearProgressIndicator(
                   backgroundColor: Color(0xFFE0E0E0),
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
+                  valueColor:
+                      AlwaysStoppedAnimation<Color>(Color(0xFF4CAF50)),
                 ),
               ),
             ],
@@ -363,7 +361,7 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
           onPressed: () => Navigator.pop(context),
         ),
         title: const Text(
-          "Confirmation",
+          'Confirmation',
           style: TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.w700,
@@ -386,7 +384,6 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
                   children: [
                     const SizedBox(height: 20),
 
-                    // Header icon
                     Center(
                       child: Container(
                         padding: const EdgeInsets.all(24),
@@ -413,9 +410,8 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
 
                     const SizedBox(height: 32),
 
-                    // Title
                     const Text(
-                      "Vérifiez vos informations",
+                      'Vérifiez vos informations',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -427,7 +423,7 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
                     const SizedBox(height: 12),
 
                     Text(
-                      "Assurez-vous que tout est correct",
+                      'Assurez-vous que tout est correct',
                       style: TextStyle(
                         fontSize: 16,
                         color: Colors.grey[600],
@@ -437,7 +433,6 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
 
                     const SizedBox(height: 40),
 
-                    // Info card
                     Container(
                       padding: const EdgeInsets.all(24),
                       decoration: BoxDecoration(
@@ -452,28 +447,28 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
                         children: [
                           _modernInfoRow(
                             icon: Icons.person_rounded,
-                            label: "Prénom",
+                            label: 'Prénom',
                             value: widget.firstName,
                             color: const Color(0xFF00CCBC),
                           ),
                           _divider(),
                           _modernInfoRow(
                             icon: Icons.badge_rounded,
-                            label: "Nom",
+                            label: 'Nom',
                             value: widget.lastName,
                             color: const Color(0xFF4A90E2),
                           ),
                           _divider(),
                           _modernInfoRow(
                             icon: Icons.phone_rounded,
-                            label: "Téléphone",
+                            label: 'Téléphone',
                             value: widget.phoneNumber,
                             color: const Color(0xFF4CAF50),
                           ),
                           _divider(),
                           _modernInfoRow(
                             icon: Icons.location_on_rounded,
-                            label: "Localité",
+                            label: 'Localité',
                             value: widget.locality,
                             color: const Color(0xFFFF9800),
                           ),
@@ -483,7 +478,6 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
 
                     const SizedBox(height: 24),
 
-                    // Warning banner
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -503,7 +497,7 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
-                              "Vérifiez bien avant de confirmer",
+                              'Vérifiez bien avant de confirmer',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: const Color(0xFFE65100),
@@ -517,7 +511,6 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
 
                     const SizedBox(height: 40),
 
-                    // Confirm button
                     SizedBox(
                       height: 56,
                       child: ElevatedButton(
@@ -549,7 +542,7 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
                                   ),
                                   SizedBox(width: 12),
                                   Text(
-                                    "Confirmer la commande",
+                                    'Confirmer la commande',
                                     style: TextStyle(
                                       fontSize: 17,
                                       color: Colors.white,
@@ -568,7 +561,6 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
             ),
           ),
 
-          // Loading overlay
           if (isLoading)
             Container(
               color: Colors.black.withOpacity(0.5),
@@ -588,7 +580,7 @@ class _ConfirmOrderPageState extends State<ConfirmOrderPage>
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        "Confirmation en cours...",
+                        'Confirmation en cours...',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,

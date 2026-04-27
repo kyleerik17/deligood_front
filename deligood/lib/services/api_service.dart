@@ -184,4 +184,113 @@ class ApiService {
     final data = await get('/api/orders/orders/livreur/delivered/');
     return data as List<dynamic>;
   }
+
+   static Future<bool> verifyIdentity({
+  required String phone,
+  required String firstName,
+  required String lastName,
+  }) async {
+  final data = await post(
+    '/api/users/pin/reset/identity/',
+    auth: false,
+    body: {
+      'phone_number': phone,
+      'first_name': firstName,
+      'last_name': lastName,
+    },
+  );
+
+  return data['reset_allowed'] == true;
+}
+
+static Future<void> resetPin({
+  required String phoneNumber,
+  required String newPin,
+  required String newPinConfirmation,
+}) async {
+  await post(
+    '/api/users/pin/reset/confirm/',
+    auth: false,
+    body: {
+      'phone_number': phoneNumber,
+      'new_pin': newPin,
+      'new_pin_confirmation': newPinConfirmation,
+    },
+  );
+}
+}
+
+Future<void> register({
+  required String phone,
+  required String pin,
+  required String firstName,
+  required String lastName,
+  required String locality,
+  required String userType,
+}) async {
+  final response = await http.post(
+    Uri.parse('${ApiService.baseUrl}/api/users/register/'),
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json', // IMPORTANT 🔥
+    },
+    body: jsonEncode({
+      'phone_number': phone,
+      'pin': pin,
+      'pin_confirmation': pin,
+      'first_name': firstName,
+      'last_name': lastName,
+      'locality': locality,
+      'user_type': userType,
+    }),
+  ).timeout(const Duration(seconds: 10));
+
+  debugPrint("STATUS: ${response.statusCode}");
+  debugPrint("BODY: ${response.body}");
+
+  // 🔐 Protection anti HTML
+  if (!response.body.trim().startsWith("{")) {
+    throw Exception("❌ Réponse serveur invalide (HTML au lieu de JSON)");
+  }
+
+  final data = jsonDecode(response.body);
+
+  if (response.statusCode != 200 && response.statusCode != 201) {
+    throw Exception(data['detail'] ?? 'Erreur inscription');
+  }
+}
+
+// ===================== PANIER API =====================
+class PanierApi {
+  static Future<List<dynamic>> fetchCart() async {
+    final data = await ApiService.get('/api/orders/cart/');
+    return data as List<dynamic>;
+  }
+
+  static Future<void> removeCartItem(int cartItemId) async {
+    await ApiService.delete('/api/orders/cart/$cartItemId/delete/');
+  }
+
+  static Future<void> clearCart() async {
+    await ApiService.post('/api/orders/cart/clear/');
+  }
+
+  static Future<Map<String, dynamic>> confirmOrder({
+    required String firstName,
+    required String lastName,
+    required String phoneNumber,
+    required String locality,
+  }) async {
+    final data = await ApiService.post(
+      '/api/orders/orders/create/',
+      body: {
+        'first_name': firstName,
+        'last_name': lastName,
+        'locality': locality,
+        'phone_number': phoneNumber,
+      },
+    );
+    await clearCart();
+    return data as Map<String, dynamic>;
+  }
 }

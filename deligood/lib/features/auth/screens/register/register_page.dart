@@ -1,4 +1,5 @@
 import 'package:deligood/core/network/api.dart';
+import 'package:deligood/services/api_service.dart' as AuthApiReg;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -24,7 +25,7 @@ class _RegisterPageState extends State<RegisterPage>
   String userType = 'client';
   bool isLoading = false;
   bool obscurePin = true;
-  int _currentStep = 0;
+  final int _currentStep = 0;
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;

@@ -9,7 +9,7 @@ Future<void> logout(BuildContext context) async {
   await prefs.clear(); // Supprime toutes les données utilisateur
 
   Navigator.of(context).pushAndRemoveUntil(
-    MaterialPageRoute(builder: (_) =>  LoginPage(onLoginSuccess: (String type) {  },)),
+    MaterialPageRoute(builder: (_) =>  LoginScreen(onLoginSuccess: (String type) {  },)),
     (route) => false,
   );
 }

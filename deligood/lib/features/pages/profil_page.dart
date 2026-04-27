@@ -1,14 +1,26 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:deligood/core/api/profile_api.dart';
+import 'package:deligood/core/utils/image_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/pages/wallet_page.dart';
 import 'package:deligood/features/pages/info_perso.dart';
 import 'package:deligood/features/auth/widgets/logout.dart';
+
+// 🎨 DESIGN SYSTEM
+const kOrange = Color(0xFFFF6B35);
+const kTeal = Color(0xFF00CCBC);
+const kBg = Color(0xFFF7F3EF);
+const kWhite = Colors.white;
+const kTextPrimary = Color(0xFF1A1A1A);
+const kTextSecondary = Color(0xFF757575);
+const kError = Color(0xFFFF5A5F);
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -17,74 +29,85 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
+class _ProfilePageState extends State<ProfilePage>
+    with TickerProviderStateMixin {
   String firstName = '';
   String lastName = '';
   String phoneNumber = '';
   String userType = '';
   String email = '';
   String initials = '?';
+
   Uint8List? avatarBytes;
   bool isLoading = true;
+
+  late AnimationController _fadeController;
+  late Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
-    _loadUser();
-    _fetchProfileFromApi();
+
+    _fadeController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+
+    _fadeAnim = CurvedAnimation(
+      parent: _fadeController,
+      curve: Curves.easeOut,
+    );
+
+    _init();
   }
 
+  Future<void> _init() async {
+    await _loadUser();
+    await _fetchProfileFromApi();
+    _fadeController.forward();
+  }
+
+  @override
+  void dispose() {
+    _fadeController.dispose();
+    super.dispose();
+  }
+
+  // ================= DATA =================
   Future<void> _loadUser() async {
     final prefs = await SharedPreferences.getInstance();
     final avatarBase64 = prefs.getString('avatar_base64');
 
-    setState(() {
-      firstName = prefs.getString('first_name') ?? '';
-      lastName = prefs.getString('last_name') ?? '';
-      phoneNumber = prefs.getString('phone_number') ?? '';
-      email = prefs.getString('email') ?? '';
-      userType = prefs.getString('user_type') ?? '';
-      initials = _buildInitials(firstName, lastName);
+    firstName = prefs.getString('first_name') ?? '';
+    lastName = prefs.getString('last_name') ?? '';
+    phoneNumber = prefs.getString('phone_number') ?? '';
+    email = prefs.getString('email') ?? '';
+    userType = prefs.getString('user_type') ?? '';
 
-      // Charger la photo depuis les prefs
-      if (avatarBase64 != null && avatarBase64.isNotEmpty) {
-        try {
-          avatarBytes = base64Decode(avatarBase64);
-          print("DEBUG Profile: Photo chargée depuis prefs");
-        } catch (e) {
-          print("DEBUG Profile: Erreur décodage photo: $e");
-          avatarBytes = null;
-        }
-      }
+    initials = _buildInitials(firstName, lastName);
 
-      isLoading = false;
-    });
+    if (avatarBase64 != null && avatarBase64.isNotEmpty) {
+      avatarBytes = base64Decode(avatarBase64);
+    }
+
+    setState(() {});
   }
 
   Future<void> _fetchProfileFromApi() async {
     try {
       final data = await ProfileApi.fetchProfile();
 
-      setState(() {
-        firstName = data['first_name'] ?? '';
-        lastName = data['last_name'] ?? '';
-        phoneNumber = data['phone_number'] ?? '';
-        email = data['email'] ?? '';
-        userType = data['user_type'] ?? '';
-        initials = _buildInitials(firstName, lastName);
+      firstName = data['first_name'] ?? '';
+      lastName = data['last_name'] ?? '';
+      phoneNumber = data['phone_number'] ?? '';
+      email = data['email'] ?? '';
+      userType = data['user_type'] ?? '';
+      initials = _buildInitials(firstName, lastName);
 
-        // Charger l'avatar si disponible
-        if (data['avatar_base64'] != null) {
-          avatarBytes = ProfileApi.decodeAvatar(data['avatar_base64']);
-          print("DEBUG Profile: Photo chargée depuis API");
-        }
+     avatarBytes = ImageUtils.decodeBase64Image(data['avatar_base64']);
+    } catch (_) {}
 
-        isLoading = false;
-      });
-    } catch (e) {
-      print("DEBUG Profile: Erreur API: $e");
-      setState(() => isLoading = false);
-    }
+    setState(() => isLoading = false);
   }
 
   String _buildInitials(String f, String l) {
@@ -95,418 +118,206 @@ class _ProfilePageState extends State<ProfilePage> {
 
   bool get showWallet => userType != 'client';
 
-  void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF5A5F).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.logout_rounded,
-                  size: 40,
-                  color: Color(0xFFFF5A5F),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Se déconnecter ?',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Vous devrez vous reconnecter pour accéder à votre compte',
-                style: TextStyle(fontSize: 15, color: Colors.grey[600]),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        side: BorderSide(color: Colors.grey[300]!),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Annuler',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        Navigator.pop(context);
-                        final prefs = await SharedPreferences.getInstance();
-                        final orderId = prefs.getInt('last_order_id');
-                        await LogoutService.performLogout(
-                          context,
-                          orderId: orderId,
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        backgroundColor: const Color(0xFFFF5A5F),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      child: const Text(
-                        'Déconnexion',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
+  // ================= UI =================
+  @override
+  Widget build(BuildContext context) {
+    final fullName = "$firstName $lastName".trim();
+
+    return Scaffold(
+      backgroundColor: kBg,
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: kOrange))
+          : FadeTransition(
+              opacity: _fadeAnim,
+              child: CustomScrollView(
+                physics: const BouncingScrollPhysics(),
+                slivers: [
+                  _header(fullName),
+                  SliverToBoxAdapter(child: _content()),
                 ],
               ),
-            ],
+            ),
+    );
+  }
+
+  // ================= HEADER =================
+  Widget _header(String fullName) {
+    return SliverAppBar(
+      expandedHeight: 32.h,
+      pinned: true,
+      backgroundColor: kBg,
+      elevation: 0,
+      flexibleSpace: FlexibleSpaceBar(
+        background: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFFFFF3EC), Color(0xFFF7F3EF)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // Avatar
+                Stack(
+                  children: [
+                    Container(
+                      width: 26.w,
+                      height: 26.w,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: avatarBytes == null
+                            ? const LinearGradient(
+                                colors: [kOrange, Color(0xFFFF8A50)],
+                              )
+                            : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: kOrange.withOpacity(0.4),
+                            blurRadius: 25,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: avatarBytes != null
+                          ? ClipOval(
+                              child: Image.memory(
+                                avatarBytes!,
+                                fit: BoxFit.cover,
+                              ),
+                            )
+                          : Center(
+                              child: Text(
+                                initials,
+                                style: GoogleFonts.playfairDisplay(
+                                  fontSize: 22.sp,
+                                  fontWeight: FontWeight.bold,
+                                  color: kWhite,
+                                ),
+                              ),
+                            ),
+                    ),
+
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: kWhite,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: kOrange, width: 2),
+                        ),
+                        child: const Icon(Icons.edit, size: 14, color: kOrange),
+                      ),
+                    ),
+                  ],
+                ),
+
+                SizedBox(height: 2.h),
+
+                Text(
+                  fullName.isEmpty ? "Utilisateur" : fullName,
+                  style: GoogleFonts.playfairDisplay(
+                    fontSize: 20.sp,
+                    fontWeight: FontWeight.bold,
+                    color: kTextPrimary,
+                  ),
+                ),
+
+                if (phoneNumber.isNotEmpty)
+                  Text(
+                    phoneNumber,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.sp,
+                      color: kTextSecondary,
+                    ),
+                  ),
+
+                SizedBox(height: 3.h),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final fullName =
-        '${firstName.isEmpty ? '' : firstName} ${lastName.isEmpty ? '' : lastName}'
-            .trim();
-
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                // Header moderne avec photo
-                SliverAppBar(
-                  expandedHeight: 30.h,
-                  pinned: true,
-                  backgroundColor: Colors.white,
-                  elevation: 0,
-                  leading: const SizedBox.shrink(),
-                  flexibleSpace: FlexibleSpaceBar(
-                    background: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            const Color(0xFF00CCBC).withOpacity(0.1),
-                            Colors.white,
-                          ],
-                        ),
-                      ),
-                      child: SafeArea(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 40, 20, 20),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              // Avatar
-                              GestureDetector(
-                                onTap: () async {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const InfoPersoPage(),
-                                    ),
-                                  );
-                                  // Recharger le profil après modification
-                                  await _loadUser();
-                                  await _fetchProfileFromApi();
-                                },
-                                child: Stack(
-                                  children: [
-                                    Container(
-                                      width: 100,
-                                      height: 100,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: avatarBytes == null
-                                            ? LinearGradient(
-                                                colors: [
-                                                  const Color(0xFF00CCBC),
-                                                  const Color(
-                                                    0xFF00CCBC,
-                                                  ).withOpacity(0.7),
-                                                ],
-                                              )
-                                            : null,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: const Color(
-                                              0xFF00CCBC,
-                                            ).withOpacity(0.3),
-                                            blurRadius: 20,
-                                            offset: const Offset(0, 8),
-                                          ),
-                                        ],
-                                      ),
-                                      child: avatarBytes != null
-                                          ? ClipOval(
-                                              child: Image.memory(
-                                                avatarBytes!,
-                                                fit: BoxFit.cover,
-                                                width: 100,
-                                                height: 100,
-                                              ),
-                                            )
-                                          : Center(
-                                              child: Text(
-                                                initials,
-                                                style: const TextStyle(
-                                                  fontSize: 36,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ),
-                                    ),
-                                    Positioned(
-                                      bottom: 0,
-                                      right: 0,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(8),
-                                        decoration: BoxDecoration(
-                                          color: Colors.white,
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: const Color(0xFF00CCBC),
-                                            width: 2,
-                                          ),
-                                        ),
-                                        child: const Icon(
-                                          Icons.edit_rounded,
-                                          size: 16,
-                                          color: Color(0xFF00CCBC),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Text(
-                                fullName.isEmpty ? 'Utilisateur' : fullName,
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              if (phoneNumber.isNotEmpty)
-                                Text(
-                                  phoneNumber,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    color: Colors.grey[600],
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+  // ================= CONTENT =================
+  Widget _content() {
+    return Padding(
+      padding: EdgeInsets.all(5.w),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              if (showWallet)
+                Expanded(
+                  child: _quickCard(
+                    icon: Icons.account_balance_wallet_rounded,
+                    label: "Wallet",
+                    color: kTeal,
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const WalletPage()),
+                      );
+                    },
                   ),
                 ),
-
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Actions rapides
-                        Row(
-                          children: [
-                            if (showWallet)
-                              Expanded(
-                                child: _buildQuickAction(
-                                  icon: Icons.account_balance_wallet_rounded,
-                                  label: 'Portefeuille',
-                                  color: const Color(0xFF00CCBC),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => const WalletPage(),
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            if (showWallet) const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildQuickAction(
-                                icon: Icons.edit_rounded,
-                                label: 'Modifier profil',
-                                color: const Color(0xFF4A90E2),
-                                onTap: () async {
-                                  await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => const InfoPersoPage(),
-                                    ),
-                                  );
-                                  await _loadUser();
-                                  await _fetchProfileFromApi();
-                                },
-                              ),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        // Menu items
-                        _buildMenuCard(
-                          title: 'Préférences',
-                          items: [
-                            _buildMenuItem(
-                              icon: Icons.notifications_outlined,
-                              title: 'Notifications',
-                              onTap: () {},
-                            ),
-                            _buildMenuItem(
-                              icon: Icons.language_rounded,
-                              title: 'Langue',
-                              trailing: 'Français',
-                              onTap: () {},
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        _buildMenuCard(
-                          title: 'Support',
-                          items: [
-                            _buildMenuItem(
-                              icon: Icons.help_outline_rounded,
-                              title: "Centre d'aide",
-                              onTap: () {},
-                            ),
-                            _buildMenuItem(
-                              icon: Icons.chat_bubble_outline_rounded,
-                              title: 'Nous contacter',
-                              onTap: () {},
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        _buildMenuCard(
-                          title: 'Informations',
-                          items: [
-                            _buildMenuItem(
-                              icon: Icons.description_outlined,
-                              title: "Conditions d'utilisation",
-                              onTap: () {},
-                            ),
-                            _buildMenuItem(
-                              icon: Icons.privacy_tip_outlined,
-                              title: 'Confidentialité',
-                              onTap: () {},
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 32),
-
-                        // Bouton déconnexion
-                        Container(
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: BorderRadius.circular(12),
-                              onTap: _showLogoutDialog,
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: const [
-                                    Icon(
-                                      Icons.logout_rounded,
-                                      color: Color(0xFFFF5A5F),
-                                      size: 20,
-                                    ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Se déconnecter',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFFFF5A5F),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 24),
-
-                        Center(
-                          child: Text(
-                            'Version 1.0.0',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[400],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 40),
-                      ],
-                    ),
-                  ),
+              SizedBox(width: 3.w),
+              Expanded(
+                child: _quickCard(
+                  icon: Icons.person_rounded,
+                  label: "Profil",
+                  color: kOrange,
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const InfoPersoPage()),
+                    );
+                    _init();
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
+
+          SizedBox(height: 3.h),
+
+          _menuCard([
+            _menuItem(Icons.notifications, "Notifications"),
+            _menuItem(Icons.language, "Langue", trailing: "Français"),
+          ]),
+
+          SizedBox(height: 2.h),
+
+          _menuCard([
+            _menuItem(Icons.help_outline, "Support"),
+            _menuItem(Icons.chat, "Contact"),
+          ]),
+
+          SizedBox(height: 2.h),
+
+          _menuCard([
+            _menuItem(Icons.description, "Conditions"),
+            _menuItem(Icons.privacy_tip, "Confidentialité"),
+          ]),
+
+          SizedBox(height: 4.h),
+
+          _logoutButton(),
+
+          SizedBox(height: 4.h),
+        ],
+      ),
     );
   }
 
-  Widget _buildQuickAction({
+  // ================= COMPONENTS =================
+  Widget _quickCard({
     required IconData icon,
     required String label,
     required Color color,
@@ -515,112 +326,109 @@ class _ProfilePageState extends State<ProfilePage> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 20),
+        padding: EdgeInsets.symmetric(vertical: 2.h),
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          color: kWhite,
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: color.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+              color: color.withOpacity(0.15),
+              blurRadius: 15,
             ),
           ],
         ),
         child: Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: color.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 24),
+              child: Icon(icon, color: color),
             ),
-            const SizedBox(height: 12),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.black87,
-              ),
-            ),
+            SizedBox(height: 1.h),
+            Text(label, style: GoogleFonts.poppins()),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildMenuCard({required String title, required List<Widget> items}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: Colors.black54,
-              letterSpacing: 0.5,
-            ),
-          ),
-        ),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(children: items),
-        ),
-      ],
+  Widget _menuCard(List<Widget> children) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kWhite,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
+        ],
+      ),
+      child: Column(children: children),
     );
   }
 
-  Widget _buildMenuItem({
-    required IconData icon,
-    required String title,
-    String? trailing,
-    required VoidCallback onTap,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: Row(
-            children: [
-              Icon(icon, color: Colors.black54, size: 22),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black87,
-                  ),
-                ),
-              ),
-              if (trailing != null) ...[
-                Text(
-                  trailing,
-                  style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Icon(
-                Icons.chevron_right_rounded,
-                color: Colors.grey[300],
-                size: 20,
-              ),
-            ],
+  Widget _menuItem(IconData icon, String title, {String? trailing}) {
+    return ListTile(
+      leading: Icon(icon, color: kTextSecondary),
+      title: Text(title, style: GoogleFonts.poppins()),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (trailing != null)
+            Text(trailing, style: GoogleFonts.poppins(color: kTextSecondary)),
+          const Icon(Icons.chevron_right),
+        ],
+      ),
+    );
+  }
+
+  Widget _logoutButton() {
+    return GestureDetector(
+      onTap: _showLogoutDialog,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: 2.h),
+        decoration: BoxDecoration(
+          color: kError.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Center(
+          child: Text(
+            "Se déconnecter",
+            style: GoogleFonts.poppins(
+              color: kError,
+              fontWeight: FontWeight.bold,
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text("Déconnexion"),
+        content: const Text("Voulez-vous vraiment vous déconnecter ?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Annuler")),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              final prefs = await SharedPreferences.getInstance();
+              final orderId = prefs.getInt('last_order_id');
+
+              await LogoutService.performLogout(context, orderId: orderId);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: kError),
+            child: const Text("Oui"),
+          ),
+        ],
       ),
     );
   }

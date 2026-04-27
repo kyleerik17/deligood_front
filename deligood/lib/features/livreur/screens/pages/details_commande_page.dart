@@ -88,9 +88,9 @@ class _CommandePageState extends State<CommandePage>
       });
 
       print('Fetched items: ${_allItems.length}');
-      _allItems.forEach((item) {
+      for (var item in _allItems) {
         print('Item: ${item.name}, category: ${item.category}, price: ${item.price}');
-      });
+      }
 
       _animationController.forward();
       return items;
