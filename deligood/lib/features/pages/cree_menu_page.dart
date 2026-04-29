@@ -1,4 +1,6 @@
+// lib/pages/create_menu_page.dart
 import 'dart:typed_data';
+import 'package:deligood/core/api/menu_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -18,9 +20,13 @@ const kError         = Color(0xFFFF5A5F);
 
 class CreateMenuPage extends StatefulWidget {
   final String userRole;
-  final int?   orderId;
+  final String token;     // ✅ token JWT de l'utilisateur connecté
 
-  const CreateMenuPage({super.key, required this.userRole, this.orderId});
+  const CreateMenuPage({
+    super.key,
+    required this.userRole,
+    required this.token,
+  });
 
   @override
   State<CreateMenuPage> createState() => _CreateMenuPageState();
@@ -33,14 +39,15 @@ class _CreateMenuPageState extends State<CreateMenuPage>
   final descCtrl  = TextEditingController();
   final priceCtrl = TextEditingController();
 
-  String?   selectedCategory;
-  Uint8List? imageBytes;
-  bool      loading = false;
+  // ✅ Catégories chargées depuis l'API
+  List<Map<String, dynamic>> categories       = [];
+  Map<String, dynamic>?      selectedCategory;
+  Uint8List?                 imageBytes;
+  bool                       loading          = false;
+  bool                       loadingCategories = true;
 
-  final picker     = ImagePicker();
-  final categories = ['Nourriture', 'Boisson', 'Dessert'];
+  final picker = ImagePicker();
 
-  // Icônes par catégorie
   final Map<String, IconData> categoryIcons = {
     'Nourriture': Icons.rice_bowl_rounded,
     'Boisson':    Icons.local_drink_rounded,
@@ -55,16 +62,29 @@ class _CreateMenuPageState extends State<CreateMenuPage>
   @override
   void initState() {
     super.initState();
-    _fadeController  = AnimationController(
+    _initAnimations();
+    _loadCategories();  // ✅ Charge les catégories au démarrage
+  }
+
+  void _initAnimations() {
+    _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700))
       ..forward();
     _slideController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
       ..forward();
-
-    _fadeAnimation  = CurvedAnimation(parent: _fadeController,  curve: Curves.easeIn);
+    _fadeAnimation  = CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
     _slideAnimation = Tween<Offset>(begin: const Offset(0, 0.15), end: Offset.zero)
         .animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
+  }
+
+  // ✅ Chargement des catégories depuis l'API
+  Future<void> _loadCategories() async {
+    final data = await MenuService.getCategories();
+    setState(() {
+      categories        = data;
+      loadingCategories = false;
+    });
   }
 
   @override
@@ -77,7 +97,6 @@ class _CreateMenuPageState extends State<CreateMenuPage>
     super.dispose();
   }
 
-  // ── Image picker ──────────────────────────────────────
   Future<void> _pickImage() async {
     final img = await picker.pickImage(
         source: ImageSource.gallery, imageQuality: 80);
@@ -87,7 +106,7 @@ class _CreateMenuPageState extends State<CreateMenuPage>
     }
   }
 
-  // ── Soumission ────────────────────────────────────────
+  // ✅ Soumission réelle vers l'API Django
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
       HapticFeedback.mediumImpact();
@@ -105,24 +124,43 @@ class _CreateMenuPageState extends State<CreateMenuPage>
     setState(() => loading = true);
 
     try {
-      // TODO: remplacer par l'appel API réel
-      await Future.delayed(const Duration(seconds: 2));
+      final result = await MenuService.createMenuItem(
+        token:       widget.token,
+        name:        nameCtrl.text.trim(),
+        description: descCtrl.text.trim(),
+        price:       int.parse(priceCtrl.text),
+        categoryId:  selectedCategory!['id'] as int,
+        imageBytes:  imageBytes,
+      );
 
       if (!mounted) return;
-      _showSnackBar('Plat publié avec succès !', isError: false);
-      debugPrint('Plat : ${nameCtrl.text} | Cat : $selectedCategory | Prix : ${priceCtrl.text} FCFA');
 
-      // Reset formulaire après succès
-      nameCtrl.clear();
-      descCtrl.clear();
-      priceCtrl.clear();
-      setState(() {
-        imageBytes       = null;
-        selectedCategory = null;
-      });
+      if (result['success'] == true) {
+        _showSnackBar('Plat publié avec succès !', isError: false);
+
+        // ✅ Réinitialise le formulaire
+        nameCtrl.clear();
+        descCtrl.clear();
+        priceCtrl.clear();
+        setState(() {
+          imageBytes       = null;
+          selectedCategory = null;
+        });
+
+        // ✅ Retourne true pour déclencher un refresh sur la page précédente
+        await Future.delayed(const Duration(seconds: 1));
+        if (mounted) Navigator.pop(context, true);
+      } else {
+        // Affiche les erreurs de validation renvoyées par Django
+        final errors = result['errors'] as Map<String, dynamic>;
+        final message = errors.entries
+            .map((e) => '${e.key}: ${e.value}')
+            .join('\n');
+        _showSnackBar(message, isError: true);
+      }
     } catch (e) {
       if (!mounted) return;
-      _showSnackBar('Erreur lors de la publication', isError: true);
+      _showSnackBar('Erreur réseau : vérifiez votre connexion', isError: true);
     } finally {
       if (mounted) setState(() => loading = false);
     }
@@ -170,10 +208,7 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                 color: kWhite,
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 8,
-                  ),
+                  BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8),
                 ],
               ),
               child: const Icon(Icons.arrow_back_ios_new_rounded,
@@ -203,15 +238,10 @@ class _CreateMenuPageState extends State<CreateMenuPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Upload photo ──
                   _buildImagePicker(),
-
                   SizedBox(height: 3.h),
-
-                  // ── Section infos plat ──
                   _buildSectionTitle('Informations du plat', Icons.restaurant_menu_rounded),
                   SizedBox(height: 1.5.h),
-
                   _buildField(
                     controller: nameCtrl,
                     label: 'Nom du plat',
@@ -221,7 +251,6 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                         v == null || v.isEmpty ? 'Ce champ est obligatoire' : null,
                   ),
                   SizedBox(height: 1.5.h),
-
                   _buildField(
                     controller: descCtrl,
                     label: 'Description',
@@ -231,13 +260,9 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                     validator: (v) =>
                         v == null || v.isEmpty ? 'Ce champ est obligatoire' : null,
                   ),
-
                   SizedBox(height: 3.h),
-
-                  // ── Section prix & catégorie ──
                   _buildSectionTitle('Prix & Catégorie', Icons.sell_rounded),
                   SizedBox(height: 1.5.h),
-
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -260,16 +285,14 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                       SizedBox(width: 3.w),
                       Expanded(
                         flex: 3,
-                        child: _buildCategoryPicker(),
+                        child: loadingCategories
+                            ? const Center(child: CircularProgressIndicator(color: kOrange))
+                            : _buildCategoryPicker(),
                       ),
                     ],
                   ),
-
                   SizedBox(height: 4.h),
-
-                  // ── Bouton publier ──
                   _buildSubmitButton(),
-
                   SizedBox(height: 3.h),
                 ],
               ),
@@ -280,7 +303,6 @@ class _CreateMenuPageState extends State<CreateMenuPage>
     );
   }
 
-  // ── Upload photo ──────────────────────────────────────
   Widget _buildImagePicker() {
     return GestureDetector(
       onTap: _pickImage,
@@ -292,9 +314,7 @@ class _CreateMenuPageState extends State<CreateMenuPage>
           color: kWhite,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: imageBytes != null
-                ? kOrange
-                : kOrange.withOpacity(0.25),
+            color: imageBytes != null ? kOrange : kOrange.withOpacity(0.25),
             width: imageBytes != null ? 2 : 1.5,
           ),
           boxShadow: [
@@ -319,22 +339,15 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                         size: 32, color: kOrange),
                   ),
                   SizedBox(height: 1.2.h),
-                  Text(
-                    'Ajouter une photo du plat',
-                    style: GoogleFonts.poppins(
-                      color: kOrange,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13.sp,
-                    ),
-                  ),
+                  Text('Ajouter une photo du plat',
+                      style: GoogleFonts.poppins(
+                          color: kOrange,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13.sp)),
                   SizedBox(height: 0.4.h),
-                  Text(
-                    'JPG, PNG — qualité recommandée',
-                    style: GoogleFonts.poppins(
-                      color: kTextSecondary,
-                      fontSize: 10.sp,
-                    ),
-                  ),
+                  Text('JPG, PNG — qualité recommandée',
+                      style: GoogleFonts.poppins(
+                          color: kTextSecondary, fontSize: 10.sp)),
                 ],
               )
             : Stack(
@@ -346,7 +359,6 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                         width: double.infinity,
                         height: double.infinity),
                   ),
-                  // Bouton changer photo
                   Positioned(
                     bottom: 10, right: 10,
                     child: Container(
@@ -359,17 +371,13 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.edit_rounded,
-                              color: kWhite, size: 14),
+                          const Icon(Icons.edit_rounded, color: kWhite, size: 14),
                           const SizedBox(width: 4),
-                          Text(
-                            'Changer',
-                            style: GoogleFonts.poppins(
-                              color: kWhite,
-                              fontSize: 10.sp,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          Text('Changer',
+                              style: GoogleFonts.poppins(
+                                  color: kWhite,
+                                  fontSize: 10.sp,
+                                  fontWeight: FontWeight.w500)),
                         ],
                       ),
                     ),
@@ -380,16 +388,14 @@ class _CreateMenuPageState extends State<CreateMenuPage>
     );
   }
 
-  // ── Sélecteur de catégorie visuel ────────────────────
+  // ✅ Catégories chargées dynamiquement depuis l'API
   Widget _buildCategoryPicker() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Catégorie',
-          style: GoogleFonts.poppins(
-            fontSize: 12.sp, color: Colors.grey.shade500),
-        ),
+        Text('Catégorie',
+            style: GoogleFonts.poppins(
+                fontSize: 12.sp, color: Colors.grey.shade500)),
         SizedBox(height: 0.6.h),
         Container(
           decoration: BoxDecoration(
@@ -403,20 +409,21 @@ class _CreateMenuPageState extends State<CreateMenuPage>
             ),
           ),
           child: DropdownButtonHideUnderline(
-            child: DropdownButtonFormField<String>(
+            child: DropdownButtonFormField<Map<String, dynamic>>(
               value: selectedCategory,
               isExpanded: true,
-              icon: const Icon(Icons.keyboard_arrow_down_rounded,
-                  color: kOrange),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: kOrange),
               decoration: InputDecoration(
                 border: InputBorder.none,
-                contentPadding: EdgeInsets.symmetric(
-                    horizontal: 3.w, vertical: 1.6.h),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 3.w, vertical: 1.6.h),
                 prefixIcon: Icon(
                   selectedCategory != null
-                      ? categoryIcons[selectedCategory]!
+                      ? (categoryIcons[selectedCategory!['name']] ??
+                          Icons.category_rounded)
                       : Icons.category_rounded,
-                  color: kOrange, size: 20,
+                  color: kOrange,
+                  size: 20,
                 ),
               ),
               hint: Text('Choisir',
@@ -424,13 +431,17 @@ class _CreateMenuPageState extends State<CreateMenuPage>
                       fontSize: 12.sp, color: Colors.grey.shade400)),
               style: GoogleFonts.poppins(
                   fontSize: 12.sp, color: kTextPrimary),
-              items: categories.map((c) {
-                return DropdownMenuItem<String>(
-                  value: c,
+              items: categories.map((cat) {
+                return DropdownMenuItem<Map<String, dynamic>>(
+                  value: cat,
                   child: Row(children: [
-                    Icon(categoryIcons[c], size: 16, color: kOrange),
+                    Icon(
+                      categoryIcons[cat['name']] ?? Icons.category_rounded,
+                      size: 16,
+                      color: kOrange,
+                    ),
                     const SizedBox(width: 6),
-                    Text(c),
+                    Text(cat['name'] as String),
                   ]),
                 );
               }).toList(),
@@ -442,7 +453,6 @@ class _CreateMenuPageState extends State<CreateMenuPage>
     );
   }
 
-  // ── Champ de saisie ───────────────────────────────────
   Widget _buildField({
     required TextEditingController controller,
     required String label,
@@ -464,10 +474,10 @@ class _CreateMenuPageState extends State<CreateMenuPage>
         labelText: label,
         hintText: hint,
         prefixIcon: Icon(icon, color: kOrange, size: 20),
-        labelStyle: GoogleFonts.poppins(
-            fontSize: 12.sp, color: Colors.grey.shade500),
-        hintStyle: GoogleFonts.poppins(
-            fontSize: 12.sp, color: Colors.grey.shade400),
+        labelStyle:
+            GoogleFonts.poppins(fontSize: 12.sp, color: Colors.grey.shade500),
+        hintStyle:
+            GoogleFonts.poppins(fontSize: 12.sp, color: Colors.grey.shade400),
         errorStyle: GoogleFonts.poppins(fontSize: 10.sp, color: kError),
         filled: true,
         fillColor: kWhite,
@@ -487,13 +497,12 @@ class _CreateMenuPageState extends State<CreateMenuPage>
           borderRadius: BorderRadius.circular(16),
           borderSide: const BorderSide(color: kError, width: 1.5),
         ),
-        contentPadding: EdgeInsets.symmetric(
-            vertical: 1.8.h, horizontal: 4.w),
+        contentPadding:
+            EdgeInsets.symmetric(vertical: 1.8.h, horizontal: 4.w),
       ),
     );
   }
 
-  // ── Bouton publier ────────────────────────────────────
   Widget _buildSubmitButton() {
     return SizedBox(
       width: double.infinity,
@@ -504,13 +513,13 @@ class _CreateMenuPageState extends State<CreateMenuPage>
           backgroundColor: kOrange,
           disabledBackgroundColor: Colors.grey.shade300,
           elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         ),
         child: loading
             ? const SizedBox(
-                width: 24, height: 24,
+                width: 24,
+                height: 24,
                 child: CircularProgressIndicator(
                     color: kWhite, strokeWidth: 2.5))
             : Row(
@@ -533,7 +542,6 @@ class _CreateMenuPageState extends State<CreateMenuPage>
     );
   }
 
-  // ── Label de section ──────────────────────────────────
   Widget _buildSectionTitle(String title, IconData icon) {
     return Row(children: [
       Container(
@@ -545,14 +553,12 @@ class _CreateMenuPageState extends State<CreateMenuPage>
         child: Icon(icon, color: kOrange, size: 16),
       ),
       SizedBox(width: 2.w),
-      Text(
-        title,
-        style: GoogleFonts.poppins(
-          fontSize: 13.sp,
-          fontWeight: FontWeight.w600,
-          color: kTextPrimary,
-        ),
-      ),
+      Text(title,
+          style: GoogleFonts.poppins(
+            fontSize: 13.sp,
+            fontWeight: FontWeight.w600,
+            color: kTextPrimary,
+          )),
     ]);
   }
 }

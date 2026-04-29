@@ -9,6 +9,17 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 import 'package:gap/gap.dart';
+import 'package:google_fonts/google_fonts.dart';
+
+// 🗺️ Remplace par ta clé API Maptiler (gratuite sur maptiler.com)
+const String kMaptilerKey = "aUpTxlfy9X9wGiCprfoR";
+
+// 🎨 COLORS
+const kOrange = Color(0xFFFF6B35);
+const kTeal = Color(0xFF00CCBC);
+const kBg = Color(0xFFF7F3EF);
+const kTextPrimary = Color(0xFF1A1A1A);
+const kTextSecondary = Colors.black54;
 
 class HomeLivreur extends StatefulWidget {
   final CourseModel? course;
@@ -28,17 +39,18 @@ class _HomeLivreurState extends State<HomeLivreur> {
   bool _delivered = false;
   bool _loading = true;
 
+  // 🗺️ Controller pour centrer la carte sur le livreur
+  final MapController _mapController = MapController();
+
   @override
   void initState() {
     super.initState();
     _loadCourse();
   }
 
-  // ✅ Charger la course depuis le paramètre OU depuis SharedPreferences
   Future<void> _loadCourse() async {
     CourseModel? course = widget.course;
 
-    // Si rien passé en paramètre, on cherche dans SharedPreferences
     if (course == null) {
       final prefs = await SharedPreferences.getInstance();
       final saved = prefs.getString('active_course');
@@ -61,19 +73,19 @@ class _HomeLivreurState extends State<HomeLivreur> {
         _loading = false;
       });
 
-      // Démarrer le timer après avoir chargé la course
-      timer = Timer.periodic(const Duration(seconds: 2), (_) => moveLivreur());
+      timer = Timer.periodic(
+        const Duration(seconds: 2),
+        (_) => moveLivreur(),
+      );
     } else {
-      // Aucune course trouvée
-      setState(() {
-        _loading = false;
-      });
+      setState(() => _loading = false);
     }
   }
 
   @override
   void dispose() {
     timer?.cancel();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -81,14 +93,20 @@ class _HomeLivreurState extends State<HomeLivreur> {
     if (orderId == 0 || _delivered || livreurPos == null || clientPos == null) {
       return;
     }
-    setState(() {
-      livreurPos = LatLng(
-        livreurPos!.latitude +
-            (clientPos!.latitude - livreurPos!.latitude) * 0.12,
-        livreurPos!.longitude +
-            (clientPos!.longitude - livreurPos!.longitude) * 0.12,
-      );
-    });
+
+    final newPos = LatLng(
+      livreurPos!.latitude +
+          (clientPos!.latitude - livreurPos!.latitude) * 0.12,
+      livreurPos!.longitude +
+          (clientPos!.longitude - livreurPos!.longitude) * 0.12,
+    );
+
+    setState(() => livreurPos = newPos);
+
+    // ✅ Recentrer la carte sur la nouvelle position du livreur
+    try {
+      _mapController.move(newPos, _mapController.camera.zoom);
+    } catch (_) {}
   }
 
   double calculateDistance(LatLng start, LatLng end) {
@@ -96,7 +114,6 @@ class _HomeLivreurState extends State<HomeLivreur> {
     return distance.as(LengthUnit.Meter, start, end);
   }
 
-  // ✅ Supprimer la course sauvegardée après livraison
   Future<void> clearSavedCourse() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('active_course');
@@ -114,61 +131,81 @@ class _HomeLivreurState extends State<HomeLivreur> {
       await LivreurApi.markOrderAsDelivered(orderId);
       if (!mounted) return;
 
-      // ✅ Supprimer la course de SharedPreferences après livraison
       await clearSavedCourse();
 
-      setState(() {
-        _delivered = true;
-      });
+      setState(() => _delivered = true);
       timer?.cancel();
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Commande livrée avec succès !')),
+        SnackBar(
+          content: Text(
+            'Commande livrée avec succès !',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
+        SnackBar(
+          content: Text(e.toString(), style: GoogleFonts.poppins()),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Loader tant qu'on attend la lecture de SharedPreferences
     if (_loading) {
-      return const Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: kBg,
+        body: Center(
+          child: CircularProgressIndicator(color: kOrange),
+        ),
       );
     }
 
-    // Aucune course trouvée ni en paramètre ni en SharedPreferences
     if (orderId == 0) {
       return Scaffold(
-        backgroundColor: Colors.grey.shade50,
+        backgroundColor: kBg,
         body: Center(
-          child: Text(
-            "Aucune course en cours",
-            style: TextStyle(fontSize: 16.sp, fontWeight: FontWeight.bold),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.delivery_dining, size: 64, color: Colors.grey.shade300),
+              Gap(2.h),
+              Text(
+                "Aucune course en cours",
+                style: GoogleFonts.poppins(
+                  fontSize: 16.sp,
+                  fontWeight: FontWeight.bold,
+                  color: kTextSecondary,
+                ),
+              ),
+            ],
           ),
         ),
       );
     }
 
-    final livreurDistanceToClient =
-        calculateDistance(livreurPos!, clientPos!);
-    final livreurDistanceToRestaurant =
-        calculateDistance(livreurPos!, restaurantPos!);
+    final distanceClient = calculateDistance(livreurPos!, clientPos!);
+    final distanceRestaurant = calculateDistance(livreurPos!, restaurantPos!);
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: kBg,
       body: Column(
         children: [
-          // ======================== AppBar Gradient ========================
+          // ======================== AppBar ========================
           Container(
             width: double.infinity,
-            padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
+            padding: EdgeInsets.fromLTRB(4.w, 5.h, 4.w, 2.h),
             decoration: const BoxDecoration(
               gradient: LinearGradient(
                 colors: [Color(0xFFFFB74D), Color(0xFFFF9800)],
@@ -183,7 +220,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
                 const Icon(Icons.delivery_dining, color: Colors.white, size: 32),
                 Text(
                   "Suivi Livreur",
-                  style: TextStyle(
+                  style: GoogleFonts.playfairDisplay(
                     color: Colors.white,
                     fontSize: 19.sp,
                     fontWeight: FontWeight.bold,
@@ -193,6 +230,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
               ],
             ),
           ),
+
           Gap(2.h),
 
           // ======================== Contenu principal ========================
@@ -204,55 +242,114 @@ class _HomeLivreurState extends State<HomeLivreur> {
                 child: Column(
                   children: [
                     // ============ MAP ============
-                    SizedBox(
-                      height: 35.h,
-                      child: FlutterMap(
-                        options: MapOptions(
-                          initialCenter: livreurPos!,
-                          initialZoom: 18,
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                            userAgentPackageName: 'com.example.deligood',
-                          ),
-                          MarkerLayer(
-                            markers: [
-                              _customMarker(
-                                  restaurantPos!, "Restaurant", Colors.orange),
-                              _customMarker(clientPos!, "Client", Colors.blue),
-                              _customMarker(livreurPos!, "Livreur", Colors.red),
-                            ],
-                          ),
-                          PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: [restaurantPos!, livreurPos!, clientPos!],
-                                color: Colors.deepOrangeAccent,
-                                strokeWidth: 4,
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4.w),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: SizedBox(
+                          height: 35.h,
+                          child: FlutterMap(
+                            mapController: _mapController,
+                            options: MapOptions(
+                              initialCenter: livreurPos!,
+                              initialZoom: 16,
+                              // ✅ Désactive la rotation accidentelle sur mobile
+                              interactionOptions: const InteractionOptions(
+                                flags: InteractiveFlag.all &
+                                    ~InteractiveFlag.rotate,
+                              ),
+                            ),
+                            children: [
+                              // ✅ Maptiler — optimisé mobile, CDN rapide mondial
+                              TileLayer(
+                                urlTemplate:
+                                    "https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=$kMaptilerKey",
+                                userAgentPackageName: "com.deligood.app",
+                                // ✅ Cache des tuiles pour économiser la data
+                                maxZoom: 19,
+                                // Fallback si une tuile échoue
+                                errorTileCallback: (tile, error, stackTrace) {
+                                  debugPrint('Tile error: $error');
+                                },
+                              ),
+                              // Polyline trajet
+                              PolylineLayer(
+                                polylines: [
+                                  Polyline(
+                                    points: [
+                                      restaurantPos!,
+                                      livreurPos!,
+                                      clientPos!,
+                                    ],
+                                    color: kOrange,
+                                    strokeWidth: 4,
+                                    borderColor: Colors.white,
+                                    borderStrokeWidth: 2,
+                                  ),
+                                ],
+                              ),
+                              // Markers
+                              MarkerLayer(
+                                markers: [
+                                  _customMarker(
+                                    restaurantPos!,
+                                    "Restaurant",
+                                    Colors.orange,
+                                    Icons.restaurant,
+                                  ),
+                                  _customMarker(
+                                    clientPos!,
+                                    "Client",
+                                    Colors.blue,
+                                    Icons.person_pin_circle,
+                                  ),
+                                  _customMarker(
+                                    livreurPos!,
+                                    "Livreur",
+                                    Colors.red,
+                                    Icons.delivery_dining,
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                        ],
+                        ),
                       ),
                     ),
+
                     Gap(2.h),
 
                     // ============ INDICATEUR D'ÉTAPES ============
-                    SizedBox(
-                      height: 8.h,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
-                        children: [
-                          _stepIndicator("Restaurant", Colors.orange),
-                          _lineBetween(),
-                          _stepIndicator("Livreur", Colors.red),
-                          _lineBetween(),
-                          _stepIndicator("Client", Colors.blue),
-                        ],
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 4.w),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(
+                          vertical: 1.5.h,
+                          horizontal: 4.w,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _stepIndicator("Restaurant", Colors.orange, Icons.restaurant),
+                            _lineBetween(),
+                            _stepIndicator("Livreur", Colors.red, Icons.delivery_dining),
+                            _lineBetween(),
+                            _stepIndicator("Client", Colors.blue, Icons.person),
+                          ],
+                        ),
                       ),
                     ),
+
                     Gap(2.h),
 
                     // ============ CARTES DE DISTANCE ============
@@ -261,26 +358,25 @@ class _HomeLivreurState extends State<HomeLivreur> {
                       child: Column(
                         children: [
                           _infoCard(
-                            title: "Distance livreur → restaurant",
-                            value:
-                                "${livreurDistanceToRestaurant.toStringAsFixed(0)} m",
+                            title: "Livreur → Restaurant",
+                            value: _formatDistance(distanceRestaurant),
                             color: Colors.orange,
                             icon: Icons.store,
                           ),
                           Gap(1.h),
                           _infoCard(
-                            title: "Distance livreur → client",
-                            value:
-                                "${livreurDistanceToClient.toStringAsFixed(0)} m",
+                            title: "Livreur → Client",
+                            value: _formatDistance(distanceClient),
                             color: Colors.blue,
                             icon: Icons.person,
                           ),
                         ],
                       ),
                     ),
+
                     Gap(2.h),
 
-                    // ============ BOUTON MARQUER COMME LIVRÉ ============
+                    // ============ BOUTON LIVRÉ ============
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 6.w),
                       child: SizedBox(
@@ -295,6 +391,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
                               borderRadius: BorderRadius.circular(18),
                             ),
                             padding: EdgeInsets.symmetric(vertical: 2.h),
+                            elevation: 0,
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -310,7 +407,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
                                 _delivered
                                     ? "Déjà livré"
                                     : "Marquer comme Livré",
-                                style: TextStyle(
+                                style: GoogleFonts.poppins(
                                   fontSize: 14.sp,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
@@ -328,37 +425,69 @@ class _HomeLivreurState extends State<HomeLivreur> {
           ),
         ],
       ),
+
+      // ✅ FAB pour recentrer sur le livreur
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
-        backgroundColor: Colors.deepOrange,
-        child: const Icon(Icons.my_location),
+        onPressed: () {
+          if (livreurPos != null) {
+            _mapController.move(livreurPos!, 16);
+          }
+        },
+        backgroundColor: kOrange,
+        child: const Icon(Icons.my_location, color: Colors.white),
       ),
     );
   }
 
-  // ======================== WIDGETS RÉUTILISABLES ========================
+  // ======================== HELPERS ========================
 
-  Marker _customMarker(LatLng pos, String label, Color color) {
+  /// Formate la distance : affiche en km si > 1000m
+  String _formatDistance(double meters) {
+    if (meters >= 1000) {
+      return "${(meters / 1000).toStringAsFixed(1)} km";
+    }
+    return "${meters.toStringAsFixed(0)} m";
+  }
+
+  // ======================== WIDGETS ========================
+
+  Marker _customMarker(LatLng pos, String label, Color color, IconData icon) {
     return Marker(
       point: pos,
-      width: 60,
-      height: 60,
+      width: 70,
+      height: 70,
       child: Column(
         children: [
-          Icon(Icons.location_on, color: color, size: 38),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.4),
+                  blurRadius: 8,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: Icon(icon, color: Colors.white, size: 20),
+          ),
           Container(
             margin: const EdgeInsets.only(top: 2),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(8),
-              boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4)],
+              boxShadow: const [
+                BoxShadow(color: Colors.black26, blurRadius: 4),
+              ],
             ),
             child: Text(
               label,
-              style: const TextStyle(
+              style: GoogleFonts.poppins(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: 10,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -377,10 +506,14 @@ class _HomeLivreurState extends State<HomeLivreur> {
     return Container(
       padding: EdgeInsets.symmetric(vertical: 2.h, horizontal: 4.w),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.9),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
-          BoxShadow(color: Colors.black12, blurRadius: 6, offset: Offset(0, 4)),
+          BoxShadow(
+            color: Colors.black12,
+            blurRadius: 6,
+            offset: Offset(0, 4),
+          ),
         ],
       ),
       child: Row(
@@ -397,29 +530,59 @@ class _HomeLivreurState extends State<HomeLivreur> {
           Expanded(
             child: Text(
               title,
-              style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.w500),
+              style: GoogleFonts.poppins(
+                fontSize: 12.sp,
+                fontWeight: FontWeight.w500,
+                color: kTextPrimary,
+              ),
             ),
           ),
           Text(
             value,
-            style: TextStyle(fontSize: 14.sp, fontWeight: FontWeight.bold),
+            style: GoogleFonts.poppins(
+              fontSize: 13.sp,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _stepIndicator(String label, Color color) => Column(
-        children: [
-          CircleAvatar(radius: 12, backgroundColor: color),
-          Gap(1.h / 2),
-          Text(
-            label,
-            style: TextStyle(fontSize: 10.sp, fontWeight: FontWeight.bold),
+  Widget _stepIndicator(String label, Color color, IconData icon) {
+    return Column(
+      children: [
+        CircleAvatar(
+          radius: 16,
+          backgroundColor: color.withOpacity(0.15),
+          child: Icon(icon, color: color, size: 16),
+        ),
+        Gap(0.5.h),
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 9.sp,
+            fontWeight: FontWeight.bold,
+            color: kTextPrimary,
           ),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 
-  Widget _lineBetween() =>
-      Container(width: 5.w, height: 3, color: Colors.grey.shade300);
+  Widget _lineBetween() => Expanded(
+        child: Container(
+          height: 2,
+          margin: EdgeInsets.symmetric(horizontal: 1.w),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Colors.orange.withOpacity(0.5),
+                Colors.blue.withOpacity(0.5),
+              ],
+            ),
+          ),
+        ),
+      );
 }

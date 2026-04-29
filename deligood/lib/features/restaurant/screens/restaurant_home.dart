@@ -1,206 +1,445 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:sizer/sizer.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
+// ================== DESIGN SYSTEM ==================
+const kOrange     = Color(0xFFFF6B35);
+const kOrangeDark = Color(0xFFFF5722);
+const kTeal       = Color(0xFF00CCBC);
+const kTealDark   = Color(0xFF00A896);
+const kBg         = Color(0xFFF7F3EF);
+const kWhite      = Colors.white;
+const kText       = Color(0xFF1A1A1A);
+const kSubText    = Color(0xFF757575);
+const kSuccess    = Color(0xFF4CAF50);
+const kError      = Color(0xFFFF5A5F);
+const kAmber      = Color(0xFFFF9800);
+
+// 🗺️ Clé Maptiler — idéalement dans un constants.dart partagé
+const String kMaptilerKey = "aUpTxlfy9X9wGiCprfoR";
 
 class HomeRestaurant extends StatefulWidget {
   final int orderId;
-
   const HomeRestaurant({super.key, required this.orderId});
 
   @override
   State<HomeRestaurant> createState() => _HomeRestaurantState();
 }
 
-class _HomeRestaurantState extends State<HomeRestaurant> {
-  late WebSocketChannel channel;
+class _HomeRestaurantState extends State<HomeRestaurant>
+    with TickerProviderStateMixin {
 
-  String orderStatus = 'pending';
-  bool isLoading = true;
+  String _orderStatus = 'pending';
+  bool _isLoading = true;
+  bool _wsConnected = false;
+  String? _errorMsg;
 
-  final String baseUrl = 'https://deligood-backend.onrender.com'; // LOCAL ONLY
-  final String wsUrl = 'ws://127.0.0.1:8000/ws/orders/';
+  LatLng? _restaurantPos;
+  LatLng? _clientPos;
+  LatLng? _livreurPos;
+
+  static const _baseUrl = 'https://deligood-backend.onrender.com';
+
+  // ✅ FIX 1 : L'URL WebSocket doit inclure l'orderId
+  String get _wsUrl =>
+      'wss://deligood-backend.onrender.com/ws/orders/${widget.orderId}/';
+
+  WebSocketChannel? _channel;
+
+  late AnimationController _slideCtrl;
+  late AnimationController _pulseCtrl;
+  late Animation<Offset> _slideAnim;
 
   @override
   void initState() {
     super.initState();
-    _connectWebSocket();
-    _fetchOrder();
-  }
 
-  @override
-  void dispose() {
-    channel.sink.close();
-    super.dispose();
-  }
+    _slideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
 
-  // =========================
-  // FETCH ORDER
-  // =========================
-  Future<void> _fetchOrder() async {
-    try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/orders/${widget.orderId}/'),
-      );
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..repeat(reverse: true);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          orderStatus = data['status'];
-          isLoading = false;
-        });
-      }
-    } catch (_) {
-      isLoading = false;
-    }
-  }
+    _slideAnim = Tween<Offset>(
+      begin: const Offset(0, 1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOut));
 
-  // =========================
-  // UPDATE STATUS (API)
-  // =========================
-  Future<void> _updateStatus(String newStatus) async {
-    try {
-      await http.patch(
-        Uri.parse('$baseUrl/api/orders/${widget.orderId}/status/'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'status': newStatus}),
-      );
-
-      _showNotification('Statut mis à jour');
-      // PAS DE setState → WebSocket fera le boulot
-    } catch (_) {
-      _showNotification('Erreur lors de la mise à jour');
-    }
-  }
-
-  // =========================
-  // WEBSOCKET
-  // =========================
-  void _connectWebSocket() {
-    channel = WebSocketChannel.connect(Uri.parse(wsUrl));
-
-    channel.stream.listen((event) {
-      final data = jsonDecode(event);
-      _handleWebSocketEvent(data);
-    });
-  }
-
-  void _handleWebSocketEvent(Map<String, dynamic> data) {
-    if (data['order_id'] == widget.orderId) {
+    // ✅ FIX 2 : Ne rien appeler si orderId invalide
+    if (widget.orderId > 0) {
+      _connectWebSocket();
+      _fetchOrder();
+    } else {
       setState(() {
-        orderStatus = data['status'];
+        _errorMsg = "Commande invalide (id = 0)";
+        _isLoading = false;
       });
     }
   }
 
-  // =========================
-  // UI HELPERS
-  // =========================
-  void _showNotification(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  @override
+  void dispose() {
+    _channel?.sink.close();
+    _slideCtrl.dispose();
+    _pulseCtrl.dispose();
+    super.dispose();
   }
 
-  Color _statusColor() {
-    switch (orderStatus) {
-      case 'confirmed':
-        return Colors.blue;
-      case 'preparing':
-        return Colors.orange;
-      case 'ready':
-        return Colors.green;
-      default:
-        return Colors.grey;
+  // ================== TOKEN ==================
+  Future<String?> _getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('access_token');
+  }
+
+  // ================== FETCH ORDER ==================
+  Future<void> _fetchOrder() async {
+    try {
+      final token = await _getToken();
+
+      final res = await http.get(
+        Uri.parse('$_baseUrl/api/orders/${widget.orderId}/'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Token $token',
+        },
+      );
+
+      if (!mounted) return;
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+
+        setState(() {
+          _orderStatus = data['status'] ?? 'pending';
+
+          _restaurantPos = data['restaurant_lat'] != null
+              ? LatLng(
+                  double.parse(data['restaurant_lat'].toString()),
+                  double.parse(data['restaurant_lng'].toString()),
+                )
+              : const LatLng(5.3540, -4.0010);
+
+          _clientPos = data['client_lat'] != null
+              ? LatLng(
+                  double.parse(data['client_lat'].toString()),
+                  double.parse(data['client_lng'].toString()),
+                )
+              : const LatLng(5.3290, -4.0210);
+
+          _livreurPos = data['livreur_lat'] != null
+              ? LatLng(
+                  double.parse(data['livreur_lat'].toString()),
+                  double.parse(data['livreur_lng'].toString()),
+                )
+              : null;
+
+          _isLoading = false;
+        });
+
+        _slideCtrl.forward();
+      } else {
+        setState(() {
+          _errorMsg = "Erreur serveur ${res.statusCode}";
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _errorMsg = "Erreur réseau";
+        _isLoading = false;
+      });
     }
   }
 
-  // =========================
-  // UI
-  // =========================
+  // ================== WEBSOCKET ==================
+  void _connectWebSocket() {
+    try {
+      // ✅ FIX 1 : URL avec orderId dynamique
+      _channel = WebSocketChannel.connect(Uri.parse(_wsUrl));
+
+      _channel!.stream.listen(
+        (event) {
+          if (!mounted) return;
+          final data = jsonDecode(event);
+          if (data['order_id'] == widget.orderId) {
+            setState(() => _orderStatus = data['status']);
+          }
+        },
+        onError: (_) {
+          if (mounted) setState(() => _wsConnected = false);
+        },
+        onDone: () {
+          if (mounted) setState(() => _wsConnected = false);
+        },
+      );
+
+      if (mounted) setState(() => _wsConnected = true);
+    } catch (_) {
+      if (mounted) setState(() => _wsConnected = false);
+    }
+  }
+
+  // ================== UI ==================
   @override
   Widget build(BuildContext context) {
-    if (isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    // ✅ FIX 2 : Afficher un état vide si orderId invalide
+    if (widget.orderId <= 0) {
+      return Scaffold(
+        backgroundColor: kBg,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.receipt_long, size: 64, color: Colors.grey.shade300),
+              SizedBox(height: 16),
+              Text(
+                "Aucune commande sélectionnée",
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  color: kSubText,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
+    if (_isLoading) {
+      return const Scaffold(
+        backgroundColor: kBg,
+        body: Center(child: CircularProgressIndicator(color: kOrange)),
+      );
+    }
+
+    final center = _restaurantPos ?? const LatLng(5.3540, -4.0010);
+
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Commande restaurant'),
-        backgroundColor: Colors.black,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: _statusColor().withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.receipt_long),
-                  const SizedBox(width: 12),
-                  Text(
-                    'Statut : $orderStatus',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: _statusColor(),
+      body: Stack(
+        children: [
+          _buildMap(center),
+          _buildTopBar(),
+
+          // ✅ Bannière d'erreur en bas si besoin
+          if (_errorMsg != null)
+            Positioned(
+              bottom: 4.h,
+              left: 6.w,
+              right: 6.w,
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.red.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 10,
                     ),
-                  ),
-                ],
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Colors.red),
+                    SizedBox(width: 2.w),
+                    Expanded(
+                      child: Text(
+                        _errorMsg!,
+                        style: GoogleFonts.poppins(
+                          color: Colors.red,
+                          fontSize: 11.sp,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () {
+                        setState(() => _errorMsg = null);
+                        _fetchOrder();
+                      },
+                      child: Text(
+                        "Réessayer",
+                        style: GoogleFonts.poppins(
+                          color: kOrange,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 11.sp,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+        ],
+      ),
+    );
+  }
 
-            const SizedBox(height: 30),
+  // ================== MAP ==================
+  Widget _buildMap(LatLng center) {
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: center,
+        initialZoom: 14,
+        interactionOptions: const InteractionOptions(
+          flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+        ),
+      ),
+      children: [
+        // ✅ Maptiler — optimisé mobile, CDN rapide, pas de 404/403
+        TileLayer(
+          urlTemplate:
+              "https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=$kMaptilerKey",
+          userAgentPackageName: "com.deligood.app",
+          maxZoom: 19,
+          errorTileCallback: (tile, error, stackTrace) {
+            debugPrint('Tile error: $error');
+          },
+        ),
 
-            if (orderStatus == 'pending')
-              _actionButton(
-                label: 'Confirmer la commande',
-                color: Colors.blue,
-                onTap: () => _updateStatus('confirmed'),
+        // Polyline restaurant → livreur → client
+        if (_restaurantPos != null && _clientPos != null)
+          PolylineLayer(
+            polylines: [
+              Polyline(
+                points: [
+                  _restaurantPos!,
+                  if (_livreurPos != null) _livreurPos!,
+                  _clientPos!,
+                ],
+                color: kOrange,
+                strokeWidth: 4,
+                borderColor: kWhite,
+                borderStrokeWidth: 2,
               ),
+            ],
+          ),
 
-            if (orderStatus == 'confirmed')
-              _actionButton(
-                label: 'Commencer la préparation',
-                color: Colors.orange,
-                onTap: () => _updateStatus('preparing'),
-              ),
-
-            if (orderStatus == 'preparing')
-              _actionButton(
-                label: 'Commande prête',
-                color: Colors.green,
-                onTap: () => _updateStatus('ready'),
-              ),
+        MarkerLayer(
+          markers: [
+            if (_restaurantPos != null)
+              _marker(_restaurantPos!, Icons.store, kOrange),
+            if (_clientPos != null)
+              _marker(_clientPos!, Icons.home, kTeal),
+            if (_livreurPos != null)
+              _marker(_livreurPos!, Icons.delivery_dining, kSuccess),
           ],
+        ),
+      ],
+    );
+  }
+
+  // ================== MARKER ==================
+  Marker _marker(LatLng pos, IconData icon, Color color) {
+    return Marker(
+      point: pos,
+      width: 60,
+      height: 60,
+      child: ScaleTransition(
+        scale: Tween(begin: 0.9, end: 1.1).animate(_pulseCtrl),
+        child: Container(
+          decoration: BoxDecoration(
+            color: kWhite,
+            shape: BoxShape.circle,
+            border: Border.all(color: color, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: color.withOpacity(0.3),
+                blurRadius: 8,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: Icon(icon, color: color),
         ),
       ),
     );
   }
 
-  Widget _actionButton({
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: color,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
+  // ================== TOP BAR ==================
+  Widget _buildTopBar() {
+    return SafeArea(
+      child: Padding(
+        padding: EdgeInsets.all(4.w),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Bouton retour
+            Container(
+              decoration: BoxDecoration(
+                color: kWhite.withOpacity(0.9),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, color: kText),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ),
+
+            // Titre commande
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.h),
+              decoration: BoxDecoration(
+                color: kWhite.withOpacity(0.9),
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Text(
+                "Commande #${widget.orderId}",
+                style: GoogleFonts.poppins(
+                  fontSize: 12.sp,
+                  fontWeight: FontWeight.bold,
+                  color: kText,
+                ),
+              ),
+            ),
+
+            // Indicateur WebSocket
+            Container(
+              decoration: BoxDecoration(
+                color: kWhite.withOpacity(0.9),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 8,
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Icon(
+                  _wsConnected ? Icons.wifi : Icons.wifi_off,
+                  color: _wsConnected ? kSuccess : kError,
+                  size: 22,
+                ),
+              ),
+            ),
+          ],
         ),
-        onPressed: onTap,
-        child: Text(label, style: const TextStyle(fontSize: 16)),
       ),
     );
   }

@@ -75,13 +75,6 @@ class _ProfilePageState extends State<ProfilePage>
     try {
       final prefs = await SharedPreferences.getInstance();
 
-      debugPrint('📦 SharedPrefs keys: ${prefs.getKeys()}');
-      debugPrint('first_name   => ${prefs.getString('first_name')}');
-      debugPrint('last_name    => ${prefs.getString('last_name')}');
-      debugPrint('phone_number => ${prefs.getString('phone_number')}');
-      debugPrint('email        => ${prefs.getString('email')}');
-      debugPrint('user_type    => ${prefs.getString('user_type')}');
-
       final f = prefs.getString('first_name') ?? '';
       final l = prefs.getString('last_name') ?? '';
 
@@ -108,10 +101,20 @@ class _ProfilePageState extends State<ProfilePage>
 
   Future<void> _fetchProfile() async {
     try {
-      final data = await ProfileApi.fetchProfile();
+      final response = await ProfileApi.fetchProfile();
 
-      if (data.isEmpty) {
+      if (response.isEmpty) {
         debugPrint('⚠️ API vide, on garde le cache local');
+        if (mounted) setState(() => isLoading = false);
+        return;
+      }
+
+      // ✅ CORRECTION : la réponse est { "success": true, "data": {...} }
+      // Il faut lire response['data'], pas response directement
+      final data = response['data'] as Map<String, dynamic>?;
+
+      if (data == null) {
+        debugPrint('⚠️ Clé "data" absente dans la réponse API');
         if (mounted) setState(() => isLoading = false);
         return;
       }
@@ -121,22 +124,31 @@ class _ProfilePageState extends State<ProfilePage>
       await prefs.setString('first_name',   data['first_name']   ?? firstName);
       await prefs.setString('last_name',    data['last_name']    ?? lastName);
       await prefs.setString('phone_number', data['phone_number'] ?? phoneNumber);
-      await prefs.setString('email',        data['email']        ?? email);
+      // ✅ email n'existe pas dans le modèle User, on ne l'écrase pas
       await prefs.setString('user_type',    data['user_type']    ?? userType);
 
-      final f = data['first_name'] ?? firstName;
-      final l = data['last_name']  ?? lastName;
+      final f = (data['first_name'] as String?) ?? firstName;
+      final l = (data['last_name']  as String?) ?? lastName;
 
       if (!mounted) return;
       setState(() {
         firstName   = f;
         lastName    = l;
-        phoneNumber = data['phone_number'] ?? phoneNumber;
-        email       = data['email']        ?? email;
-        userType    = data['user_type']    ?? userType;
+        phoneNumber = (data['phone_number'] as String?) ?? phoneNumber;
+        userType    = (data['user_type']    as String?) ?? userType;
         initials    = _buildInitials(f, l);
-        avatarBytes = ImageUtils.decodeBase64Image(data['avatar_base64']) ?? avatarBytes;
-        isLoading   = false;
+
+        // ✅ photo_url retourné par l'API (pas avatar_base64)
+        final photoUrl = data['photo_url'] as String?;
+        if (photoUrl != null && photoUrl.isNotEmpty) {
+          // photo_url est une URL, pas du base64 — on garde avatarBytes du cache
+          // Si tu veux charger l'image réseau, utilise Image.network(photoUrl)
+        }
+
+        final avatar = prefs.getString('avatar_base64');
+avatarBytes = (avatar != null ? ImageUtils.decodeBase64Image(avatar) : null) ?? avatarBytes;
+
+        isLoading = false;
       });
     } catch (e) {
       debugPrint('❌ _fetchProfile error: $e');
