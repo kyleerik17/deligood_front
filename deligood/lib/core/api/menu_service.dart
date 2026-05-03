@@ -1,25 +1,16 @@
-// lib/services/menu_service.dart
 import 'dart:typed_data';
-import 'package:http/http.dart' as http;
-import 'package:http_parser/http_parser.dart';
 import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MenuService {
-  // 🔧 Remplace par ton URL de base
-  // 🔧 Remplace l'IP par la tienne
-  // Endpoints dispo :
-  //   POST   /api/menu/create/
-  //   GET    /api/menu/items/
-  //   GET    /api/menu/items/<id>/
-  //   PUT    /api/menu/update/<id>/
-  //   DELETE /api/menu/delete/<id>/
-  //   GET    /api/menu/mine/
-  //   GET    /api/menu/categories/
-  //   GET    /api/menu/category/<id>/items/
-  //   GET    /api/menu/restaurants/
-  static const String _baseUrl = 'http://192.168.1.X:8000/api/menu';
+  static const String _baseUrl =
+      'https://deligood-backend.onrender.com/api/menu';
 
-  /// Crée un plat via POST multipart/form-data
+  // ─────────────────────────────
+  // CREATE MENU ITEM
+  // ─────────────────────────────
   static Future<Map<String, dynamic>> createMenuItem({
     required String token,
     required String name,
@@ -27,63 +18,80 @@ class MenuService {
     required int price,
     required int categoryId,
     Uint8List? imageBytes,
-    String? imageFileName,
   }) async {
+    debugPrint("🔑 TOKEN => $token");
+
     final uri = Uri.parse('$_baseUrl/create/');
 
     final request = http.MultipartRequest('POST', uri)
-      ..headers['Authorization'] = 'Bearer $token'
-      ..fields['name']        = name
+      ..headers['Authorization'] = 'Token $token'  // ✅ Token pas Bearer
+      ..fields['name'] = name
       ..fields['description'] = description
-      ..fields['price']       = price.toString()
-      ..fields['category']    = categoryId.toString();
+      ..fields['price'] = price.toString()
+      ..fields['category'] = categoryId.toString();
 
-    // Ajout de l'image si présente
     if (imageBytes != null) {
-      final fileName = imageFileName ?? 'plat.jpg';
       request.files.add(
         http.MultipartFile.fromBytes(
           'image',
           imageBytes,
-          filename: fileName,
-          contentType: MediaType('image', 'jpeg'),
+          filename: 'menu.jpg',
         ),
       );
     }
 
-    final streamedResponse = await request.send();
-    final response         = await http.Response.fromStream(streamedResponse);
-    final body             = jsonDecode(response.body) as Map<String, dynamic>;
+    final response = await request.send();
+    final res = await http.Response.fromStream(response);
 
-    if (response.statusCode == 201) {
-      return {'success': true, 'data': body};
+    debugPrint("📦 RESPONSE => ${res.body}");
+
+    final data = jsonDecode(res.body);
+
+    if (res.statusCode == 201) {
+      return {"success": true, "data": data};
     } else {
-      return {'success': false, 'errors': body};
+      return {"success": false, "message": data.toString(), "errors": data};
     }
   }
 
-  /// Récupère les catégories disponibles
+  // ─────────────────────────────
+  // CATEGORIES
+  // ─────────────────────────────
   static Future<List<Map<String, dynamic>>> getCategories() async {
-    final response = await http.get(Uri.parse('$_baseUrl/categories/'));
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.cast<Map<String, dynamic>>();
-    }
-    return [];
-  }
+    final prefs = await SharedPreferences.getInstance();
 
-  /// Récupère les plats du restaurant connecté
-  static Future<List<Map<String, dynamic>>> getMyMenus({
-    required String token,
-  }) async {
-    final response = await http.get(
-      Uri.parse('$_baseUrl/mine/'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-    if (response.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(response.body);
-      return data.cast<Map<String, dynamic>>();
+    // 1. CHECK CACHE (seulement si non vide)
+    final cached = prefs.getString('categories_cache');
+    if (cached != null) {
+      try {
+        final List data = jsonDecode(cached);
+        if (data.isNotEmpty) {
+          debugPrint("⚡ CATEGORIES FROM CACHE => ${data.length}");
+          return data.cast<Map<String, dynamic>>();
+        }
+      } catch (_) {}
     }
+
+    // 2. API CALL
+    try {
+      final response = await http.get(Uri.parse('$_baseUrl/categories/'));
+
+      debugPrint('🏷️ STATUS => ${response.statusCode}');
+      debugPrint('🏷️ BODY => ${response.body}');
+
+      if (response.statusCode == 200) {
+        final List data = jsonDecode(response.body);
+
+        if (data.isNotEmpty) {
+          prefs.setString('categories_cache', jsonEncode(data));
+        }
+
+        return data.cast<Map<String, dynamic>>();
+      }
+    } catch (e) {
+      debugPrint("❌ CATEGORY ERROR => $e");
+    }
+
     return [];
   }
 }

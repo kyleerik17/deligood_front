@@ -2,7 +2,6 @@ import 'package:deligood/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:deligood/core/network/api.dart';
 
 // 🎨 DESIGN SYSTEM
 const kOrange = Color(0xFFFF6B35);

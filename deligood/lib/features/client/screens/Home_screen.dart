@@ -13,22 +13,19 @@ import 'package:deligood/core/session/session_manager.dart';
 // ─────────────────────────────────────────────
 // DESIGN SYSTEM
 // ─────────────────────────────────────────────
-const kOrange        = Color(0xFFFF6B35);
-const kTeal          = Color(0xFF00CCBC);
-const kWhite         = Colors.white;
-const kTextPrimary   = Color(0xFF1A1A1A);
+const kOrange = Color(0xFFFF6B35);
+const kTeal = Color(0xFF00CCBC);
+const kWhite = Colors.white;
+const kTextPrimary = Color(0xFF1A1A1A);
 const kTextSecondary = Color(0xFF757575);
-const kSuccess       = Color(0xFF4CAF50);
+const kSuccess = Color(0xFF4CAF50);
 
 const String _baseUrl = 'https://deligood-backend.onrender.com';
-
-// 🗺️ Remplace par ta clé Maptiler (gratuite sur maptiler.com)
-// Idéalement dans un fichier constants.dart partagé
 const String kMaptilerKey = "aUpTxlfy9X9wGiCprfoR";
 
 class HomeScreen extends StatefulWidget {
-  final int orderId;
-  const HomeScreen({super.key, required this.orderId});
+  final int? orderId;
+  const HomeScreen({super.key, this.orderId});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -36,6 +33,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   final SessionManager session = SessionManager();
+
+  late final MapController _mapController;
 
   LatLng? clientPos;
   LatLng? restaurantPos;
@@ -49,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    _mapController = MapController();
 
     _pulseController = AnimationController(
       vsync: this,
@@ -68,9 +68,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     });
 
     final gps = await _getCurrentLocation();
-    if (gps != null) clientPos = gps;
+    if (gps != null) {
+      clientPos = gps;
+      // Centre la carte sur la position réelle dès qu'on l'a
+      _mapController.move(gps, 15);
+    }
 
-    await _fetchPositions();
+    if (widget.orderId != null && widget.orderId! > 0) {
+      await _fetchPositions();
+    }
 
     setState(() => isLoading = false);
   }
@@ -158,6 +164,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     _pulseController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -166,23 +173,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   // ════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
-    final center = clientPos ?? const LatLng(5.32, -4.01);
-
     return Scaffold(
       body: Stack(
         children: [
           // ════ MAP ════
           FlutterMap(
-            options: MapOptions(
-              initialCenter: center,
-              initialZoom: 14,
-              // ✅ Désactive la rotation accidentelle sur mobile
-              interactionOptions: const InteractionOptions(
+            mapController: _mapController,
+            options: const MapOptions(
+              initialCenter: LatLng(5.32, -4.01), // fallback Abidjan
+              initialZoom: 15,
+              interactionOptions: InteractionOptions(
                 flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
               ),
             ),
             children: [
-              // ✅ Maptiler — optimisé mobile, CDN rapide, pas de 404/403
               TileLayer(
                 urlTemplate:
                     "https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=$kMaptilerKey",
@@ -214,7 +218,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               MarkerLayer(
                 markers: [
                   if (clientPos != null)
-                    _marker(clientPos!, Icons.home, kTeal),
+                    _marker(clientPos!, Icons.my_location, kTeal),
                   if (restaurantPos != null)
                     _marker(restaurantPos!, Icons.store, kOrange),
                   if (deliveryPos != null)
@@ -232,12 +236,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   // Bouton refresh
-                  _topBarButton(
-                    icon: Icons.refresh,
-                    onTap: _init,
-                  ),
+                  _topBarButton(icon: Icons.refresh, onTap: _init),
 
-                  // Titre commande
+                  // Titre
                   Container(
                     padding: EdgeInsets.symmetric(
                       horizontal: 4.w,
@@ -254,7 +255,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                       ],
                     ),
                     child: Text(
-                      "Commande #${widget.orderId}",
+                      widget.orderId != null && widget.orderId! > 0
+                          ? "Commande #${widget.orderId}"
+                          : "Ma position",
                       style: GoogleFonts.poppins(
                         fontSize: 11.sp,
                         fontWeight: FontWeight.bold,
@@ -263,8 +266,15 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                     ),
                   ),
 
-                  // Placeholder pour équilibrer la row
-                  const SizedBox(width: 40),
+                  // Bouton recentrer
+                  _topBarButton(
+                    icon: Icons.my_location,
+                    onTap: () {
+                      if (clientPos != null) {
+                        _mapController.move(clientPos!, 15);
+                      }
+                    },
+                  ),
                 ],
               ),
             ),
@@ -286,10 +296,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               left: 6.w,
               right: 6.w,
               child: Container(
-                padding: EdgeInsets.symmetric(
-                  horizontal: 4.w,
-                  vertical: 1.5.h,
-                ),
+                padding:
+                    EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.5.h),
                 decoration: BoxDecoration(
                   color: Colors.red.shade50,
                   borderRadius: BorderRadius.circular(16),
@@ -362,6 +370,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       point: pos,
       width: 60,
       height: 60,
+      alignment: Alignment.center,
       child: ScaleTransition(
         scale: Tween(begin: 0.9, end: 1.1).animate(_pulseController),
         child: Container(

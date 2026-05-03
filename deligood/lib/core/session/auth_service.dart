@@ -1,4 +1,6 @@
+
 import 'package:deligood/core/network/api.dart';
+import 'package:deligood/features/auth/auth_state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -8,9 +10,6 @@ import '../session/session_manager.dart';
 class AuthService {
   final session = SessionManager();
 
-  // ===============================
-  // NORMALISATION NUMÉRO
-  // ===============================
   String normalizePhone(String phone) {
     String digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.startsWith('225') && digits.length > 10) {
@@ -22,9 +21,6 @@ class AuthService {
     return digits;
   }
 
-  // ===============================
-  // LOGIN
-  // ===============================
   Future<bool> login({required String phone, required String pin}) async {
     final url = Uri.parse(
       'https://deligood-backend.onrender.com/api/users/login/',
@@ -47,21 +43,25 @@ class AuthService {
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-
-        // ✅ On extrait toutes les infos utilisateur dès le login
         final user = data['user'] as Map<String, dynamic>? ?? {};
-
         final token = data['token'] ?? data['access'] ?? '';
+        final userType = user['user_type'] ?? '';
 
         await session.saveSession(
           token: token,
-          userType: user['user_type'] ?? '',
+          userType: userType,
           userId: user['id'] ?? 0,
-          // 🔥 CORRECTIF : on sauvegarde les infos utilisateur ici
           firstName: user['first_name'],
           lastName: user['last_name'],
           phoneNumber: user['phone_number'],
           email: user['email'],
+        );
+
+        // ✅ On alimente AuthState ici — une seule fois, une seule source
+        AuthState.instance.setAuth(
+          token:    token,
+          userRole: userType,
+          orderId:  0, // mis à jour plus tard si nécessaire
         );
 
         debugPrint("✅ Session sauvegardée:");
@@ -69,7 +69,8 @@ class AuthService {
         debugPrint("   last_name    => ${user['last_name']}");
         debugPrint("   phone_number => ${user['phone_number']}");
         debugPrint("   email        => ${user['email']}");
-        debugPrint("   user_type    => ${user['user_type']}");
+        debugPrint("   user_type    => $userType");
+        debugPrint("   token        => $token");
 
         return true;
       }
@@ -82,16 +83,11 @@ class AuthService {
     }
   }
 
-  // ===============================
-  // LOGOUT
-  // ===============================
   Future<void> logout() async {
+    AuthState.instance.clear(); // ✅ on vide AuthState au logout
     await session.clearSession();
   }
 
-  // ===============================
-  // RESET PIN
-  // ===============================
   static Future<void> resetPin({
     required String phoneNumber,
     required String newPin,
@@ -108,9 +104,6 @@ class AuthService {
     );
   }
 
-  // ===============================
-  // VERIFY IDENTITY
-  // ===============================
   static Future<bool> verifyIdentity({
     required String phone,
     required String firstName,

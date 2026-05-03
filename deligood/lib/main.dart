@@ -1,5 +1,6 @@
+import 'package:deligood/core/session/session_manager.dart';
+import 'package:deligood/features/auth/auth_state.dart';
 import 'package:deligood/features/auth/screens/login/login_page.dart';
-import 'package:deligood/features/client/screens/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -31,6 +32,11 @@ Map<String, dynamic> decodeJwt(String token) {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final session = SessionManager();
+  await Future.wait([
+    session.loadSession(),
+    AuthState.instance.loadFromPrefs(),
+  ]);// ✅ Recharge le token
   runApp(const MyApp());
 }
 
@@ -44,7 +50,7 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'DeliGood',
-          home: const SplashScreen(orderId: 0,),
+          home: const AuthWrapper(),
         );
       },
     );

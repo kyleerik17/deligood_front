@@ -37,14 +37,18 @@ class SessionManager {
     await prefs.setString('user_type', userType);
     await prefs.setInt('user_id', userId);
 
-    if (firstName != null && firstName.isNotEmpty)
+    if (firstName != null && firstName.isNotEmpty) {
       await prefs.setString('first_name', firstName);
-    if (lastName != null && lastName.isNotEmpty)
+    }
+    if (lastName != null && lastName.isNotEmpty) {
       await prefs.setString('last_name', lastName);
-    if (phoneNumber != null && phoneNumber.isNotEmpty)
+    }
+    if (phoneNumber != null && phoneNumber.isNotEmpty) {
       await prefs.setString('phone_number', phoneNumber);
-    if (email != null && email.isNotEmpty)
+    }
+    if (email != null && email.isNotEmpty) {
       await prefs.setString('email', email);
+    }
   }
 
   // ================= LOAD SESSION =================

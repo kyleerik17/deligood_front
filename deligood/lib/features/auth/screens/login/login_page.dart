@@ -1,22 +1,19 @@
-
-
 import 'package:deligood/core/session/auth_service.dart';
+import 'package:deligood/features/auth/auth_state.dart';
 import 'package:deligood/features/auth/screens/login/forget_password.dart';
 import 'package:deligood/features/auth/screens/register/register_page.dart';
-
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import 'package:sizer/sizer.dart';
 
 // ================= DESIGN =================
-const kOrange = Color(0xFFFF6B35);
-const kBg = Color(0xFFF7F3EF);
-const kWhite = Colors.white;
-const kTextPrimary = Color(0xFF1A1A1A);
+const kOrange        = Color(0xFFFF6B35);
+const kBg            = Color(0xFFF7F3EF);
+const kWhite         = Colors.white;
+const kTextPrimary   = Color(0xFF1A1A1A);
 const kTextSecondary = Color(0xFF757575);
-const kError = Color(0xFFFF5A5F);
+const kError         = Color(0xFFFF5A5F);
 
 // ================= SCREEN =================
 class LoginScreen extends StatefulWidget {
@@ -35,17 +32,17 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final phoneController = TextEditingController();
-  final pinController = TextEditingController();
+  final pinController   = TextEditingController();
 
-  bool obscure = true;
-  bool loading = false;
+  bool    obscure = true;
+  bool    loading = false;
   String? error;
 
   final AuthService _authService = AuthService();
 
   Future<void> _login() async {
     final phone = phoneController.text.trim();
-    final pin = pinController.text.trim();
+    final pin   = pinController.text.trim();
 
     if (phone.isEmpty || pin.isEmpty) {
       setState(() => error = "Veuillez remplir tous les champs");
@@ -54,25 +51,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
     setState(() {
       loading = true;
-      error = null;
+      error   = null;
     });
 
-    final success = await _authService.login(
-      phone: phone,
-      pin: pin,
-    );
+    final success = await _authService.login(phone: phone, pin: pin);
 
     if (!mounted) return;
 
     if (success) {
-      widget.onLoginSuccess("user");
+      // ✅ userRole lu depuis AuthState — rempli par AuthService.login()
+      // plus besoin de hardcoder "user"
+      final role = AuthState.instance.userRole;
+
+      widget.onLoginSuccess(role);
 
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) => CustomBottomNavBar(
-            userRole: "user",
-            orderId: widget.orderId ?? 0,
+            userRole: role,
+            orderId:  widget.orderId ?? 0,
           ),
         ),
       );
@@ -81,11 +79,7 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     setState(() => loading = false);
-
-    // Après avoir reçu la réponse de l'API login
-
   }
-  
 
   // ================= UI =================
   @override
@@ -100,7 +94,6 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // TITLE
                 Text(
                   "Bon retour 👋",
                   textAlign: TextAlign.center,
@@ -124,7 +117,6 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 SizedBox(height: 5.h),
 
-                // CARD
                 Container(
                   padding: EdgeInsets.all(5.w),
                   decoration: BoxDecoration(
@@ -134,7 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       BoxShadow(
                         color: Colors.black.withOpacity(0.06),
                         blurRadius: 20,
-                      )
+                      ),
                     ],
                   ),
                   child: Column(
@@ -162,12 +154,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           labelText: "PIN",
                           prefixIcon: const Icon(Icons.lock),
                           suffixIcon: IconButton(
-                            onPressed: () =>
-                                setState(() => obscure = !obscure),
+                            onPressed: () => setState(() => obscure = !obscure),
                             icon: Icon(
-                              obscure
-                                  ? Icons.visibility
-                                  : Icons.visibility_off,
+                              obscure ? Icons.visibility : Icons.visibility_off,
                             ),
                           ),
                         ),
@@ -207,9 +196,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ),
                           child: loading
-                              ? const CircularProgressIndicator(
-                                  color: Colors.white,
-                                )
+                              ? const CircularProgressIndicator(color: Colors.white)
                               : const Text("Se connecter"),
                         ),
                       ),
@@ -219,14 +206,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 SizedBox(height: 4.h),
 
-                // REGISTER
                 GestureDetector(
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => const RegisterPage(),
-                      ),
+                      MaterialPageRoute(builder: (_) => const RegisterPage()),
                     );
                   },
                   child: const Text(

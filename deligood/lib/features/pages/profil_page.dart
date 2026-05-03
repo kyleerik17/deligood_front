@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:deligood/core/api/profile_api.dart';
 import 'package:deligood/core/utils/image_utils.dart';

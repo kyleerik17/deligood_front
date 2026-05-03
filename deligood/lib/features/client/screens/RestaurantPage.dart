@@ -285,14 +285,27 @@ class _RestaurantPageState extends State<RestaurantPage>
         ),
         child: Column(
           children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
-                ),
-                child: Image.asset('assets/images/n.png', fit: BoxFit.cover),
-              ),
+           Expanded(
+  child: ClipRRect(
+    borderRadius: const BorderRadius.vertical(
+      top: Radius.circular(20),
+    ),
+    child: r['photo'] != null && r['photo'].toString().isNotEmpty
+        ? Image.network(
+            r['photo'].toString(),
+            fit: BoxFit.cover,
+            width: double.infinity,
+            errorBuilder: (_, __, ___) => Image.asset(
+              'assets/images/n.png',
+              fit: BoxFit.cover,
             ),
+          )
+        : Image.asset(
+            'assets/images/n.png',
+            fit: BoxFit.cover,
+          ),
+  ),
+),
             Padding(
               padding: EdgeInsets.all(3.w),
               child: Column(

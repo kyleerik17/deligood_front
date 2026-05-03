@@ -11,6 +11,7 @@ import 'package:deligood/features/livreur/screens/course_page.dart';
 import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
 import 'package:deligood/features/pages/cree_menu_page.dart';
 
+
 // ================== DESIGN SYSTEM ==================
 const kOrange     = Color(0xFFFF6B35);
 const kOrangeDark = Color(0xFFFF5722);
@@ -35,6 +36,7 @@ class _NavItem {
 
 // ================== WIDGET ==================
 class CustomBottomNavBar extends StatefulWidget {
+  // ✅ Plus de token ici — lu depuis AuthState
   final String userRole;
   final int orderId;
 
@@ -53,7 +55,6 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
 
   int _currentIndex = 0;
 
-  // Pages construites une seule fois et gardées en mémoire
   late final List<Widget> _pages;
   late final List<_NavItem> _navItems;
 
@@ -62,14 +63,10 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
   @override
   void initState() {
     super.initState();
-
     _indicatorCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
-
-    // ✅ FIX PRINCIPAL : on construit les pages UNE SEULE FOIS
-    // selon le rôle exact, sans jamais les recréer
     _buildPagesForRole();
   }
 
@@ -90,10 +87,10 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
           ProfilePage(),
         ];
         _navItems = const [
-          _NavItem(icon: Icons.home_outlined,        activeIcon: Icons.home_rounded,         label: "Accueil"),
-          _NavItem(icon: Icons.delivery_dining_outlined, activeIcon: Icons.delivery_dining,   label: "Courses"),
-          _NavItem(icon: Icons.history_outlined,     activeIcon: Icons.history,               label: "Historique"),
-          _NavItem(icon: Icons.person_outline,       activeIcon: Icons.person_rounded,        label: "Profil"),
+          _NavItem(icon: Icons.home_outlined,            activeIcon: Icons.home_rounded,           label: "Accueil"),
+          _NavItem(icon: Icons.delivery_dining_outlined, activeIcon: Icons.delivery_dining,        label: "Courses"),
+          _NavItem(icon: Icons.history_outlined,         activeIcon: Icons.history,                label: "Historique"),
+          _NavItem(icon: Icons.person_outline,           activeIcon: Icons.person_rounded,         label: "Profil"),
         ];
         break;
 
@@ -101,18 +98,18 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
         _pages = [
           HomeRestaurant(orderId: widget.orderId),
           const CommandeRestoPage(),
-          CreateMenuPage(userRole: 'restaurant', orderId: 0),
+          // ✅ Plus de token en paramètre — CreateMenuPage le lit lui-même
+          const CreateMenuPage(userRole: 'restaurant'),
           const ProfilePage(),
         ];
         _navItems = const [
-          _NavItem(icon: Icons.home_outlined,        activeIcon: Icons.home_rounded,          label: "Accueil"),
-          _NavItem(icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long,         label: "Commandes"),
-          _NavItem(icon: Icons.menu_book_outlined,   activeIcon: Icons.menu_book,             label: "Menu"),
-          _NavItem(icon: Icons.person_outline,       activeIcon: Icons.person_rounded,        label: "Profil"),
+          _NavItem(icon: Icons.home_outlined,             activeIcon: Icons.home_rounded,          label: "Accueil"),
+          _NavItem(icon: Icons.receipt_long_outlined,     activeIcon: Icons.receipt_long,          label: "Commandes"),
+          _NavItem(icon: Icons.menu_book_outlined,        activeIcon: Icons.menu_book,             label: "Menu"),
+          _NavItem(icon: Icons.person_outline,            activeIcon: Icons.person_rounded,        label: "Profil"),
         ];
         break;
 
-      // 'user' / 'client' ou tout autre rôle → client par défaut
       default:
         _pages = [
           HomeScreen(orderId: widget.orderId),
@@ -121,10 +118,10 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
           ProfilePage(),
         ];
         _navItems = const [
-          _NavItem(icon: Icons.home_outlined,        activeIcon: Icons.home_rounded,          label: "Accueil"),
-          _NavItem(icon: Icons.restaurant_outlined,  activeIcon: Icons.restaurant,            label: "Restaurants"),
-          _NavItem(icon: Icons.shopping_cart_outlined, activeIcon: Icons.shopping_cart_rounded, label: "Panier"),
-          _NavItem(icon: Icons.person_outline,       activeIcon: Icons.person_rounded,        label: "Profil"),
+          _NavItem(icon: Icons.home_outlined,              activeIcon: Icons.home_rounded,          label: "Accueil"),
+          _NavItem(icon: Icons.restaurant_outlined,        activeIcon: Icons.restaurant,            label: "Restaurants"),
+          _NavItem(icon: Icons.shopping_cart_outlined,     activeIcon: Icons.shopping_cart_rounded, label: "Panier"),
+          _NavItem(icon: Icons.person_outline,             activeIcon: Icons.person_rounded,        label: "Profil"),
         ];
     }
   }
@@ -139,10 +136,7 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // ✅ Pas de ValueKey ici — on ne veut pas reconstruire le Scaffold
       body: IndexedStack(
-        // IndexedStack garde toutes les pages en mémoire
-        // et n'affiche que celle à _currentIndex
         index: _currentIndex,
         children: _pages,
       ),
@@ -180,10 +174,9 @@ class _CustomBottomNavBarState extends State<CustomBottomNavBar>
   }
 
   Widget _buildNavItem(int index) {
-    final item      = _navItems[index];
-    final isActive  = _currentIndex == index;
+    final item     = _navItems[index];
+    final isActive = _currentIndex == index;
 
-    // Couleur selon rôle
     final activeColor = widget.userRole == 'livreur'
         ? kTeal
         : widget.userRole == 'restaurant'

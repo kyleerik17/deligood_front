@@ -1,4 +1,3 @@
-import 'package:deligood/core/network/api.dart';
 import 'package:deligood/services/api_service.dart' as AuthApiReg;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -93,11 +92,28 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   Future<void> _register() async {
-    if (!_formKey.currentState!.validate()) return;
+    debugPrint('🔹 Bouton "S\'inscrire" pressé');
+    debugPrint('🔹 Validation du formulaire...');
+
+    if (!_formKey.currentState!.validate()) {
+      debugPrint('🔹 Validation échouée');
+      return;
+    }
+
+    debugPrint('🔹 Validation réussie');
+    debugPrint('🔹 Début de l\'enregistrement...');
 
     setState(() => isLoading = true);
 
     try {
+      debugPrint('🔹 Appel de l\'API d\'enregistrement avec les données suivantes :');
+      debugPrint('🔹 Téléphone: ${phoneController.text.trim()}');
+      debugPrint('🔹 PIN: ${pinController.text.trim()}');
+      debugPrint('🔹 Prénom: ${firstNameController.text.trim()}');
+      debugPrint('🔹 Nom: ${lastNameController.text.trim()}');
+      debugPrint('🔹 Localité: ${localityController.text.trim()}');
+      debugPrint('🔹 Type d\'utilisateur: $userType');
+
       await AuthApiReg.register(
         phone: phoneController.text.trim(),
         pin: pinController.text.trim(),
@@ -107,17 +123,31 @@ class _RegisterPageState extends State<RegisterPage>
         userType: userType,
       );
 
-      if (!mounted) return;
+      debugPrint('🔹 Enregistrement réussi');
+
+      if (!mounted) {
+        debugPrint('🔹 Widget non monté, annulation');
+        return;
+      }
+
       setState(() => isLoading = false);
+      debugPrint('🔹 Affichage de la boîte de dialogue de succès');
       _showSuccessDialog();
     } catch (e) {
-      if (!mounted) return;
+      debugPrint('🔹 Erreur lors de l\'enregistrement: $e');
+
+      if (!mounted) {
+        debugPrint('🔹 Widget non monté, annulation');
+        return;
+      }
+
       setState(() => isLoading = false);
       _showError(e.toString().replaceAll('Exception:', '').trim());
     }
   }
 
   void _showSuccessDialog() {
+    debugPrint('🔹 Affichage de la boîte de dialogue de succès');
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -158,6 +188,7 @@ class _RegisterPageState extends State<RegisterPage>
                 width: double.infinity,
                 child: ElevatedButton(
                   onPressed: () {
+                    debugPrint('🔹 Bouton "Se connecter" pressé dans la boîte de dialogue');
                     Navigator.pop(context); // ferme dialog
                     Navigator.pop(context); // retour login
                   },
@@ -187,6 +218,7 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   void _showError(String msg) {
+    debugPrint('🔹 Affichage d\'une erreur: $msg');
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(
@@ -263,6 +295,7 @@ class _RegisterPageState extends State<RegisterPage>
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('🔹 Construction de la page d\'inscription');
     return Scaffold(
       backgroundColor: const Color(0xFFF7F3EF),
       body: Stack(
@@ -311,7 +344,10 @@ class _RegisterPageState extends State<RegisterPage>
                         Row(
                           children: [
                             GestureDetector(
-                              onTap: () => Navigator.pop(context),
+                              onTap: () {
+                                debugPrint('🔹 Bouton "Retour" pressé');
+                                Navigator.pop(context);
+                              },
                               child: Container(
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
@@ -373,8 +409,10 @@ class _RegisterPageState extends State<RegisterPage>
                             final isSelected = userType == type['value'];
                             return Expanded(
                               child: GestureDetector(
-                                onTap: () =>
-                                    setState(() => userType = type['value']),
+                                onTap: () {
+                                  debugPrint('🔹 Type d\'utilisateur sélectionné: ${type['value']}');
+                                  setState(() => userType = type['value']);
+                                },
                                 child: AnimatedContainer(
                                   duration:
                                       const Duration(milliseconds: 200),
@@ -522,8 +560,10 @@ class _RegisterPageState extends State<RegisterPage>
                               color: Colors.grey.shade400,
                               size: 20,
                             ),
-                            onPressed: () =>
-                                setState(() => obscurePin = !obscurePin),
+                            onPressed: () {
+                              debugPrint('🔹 Bouton "Afficher/Masquer PIN" pressé');
+                              setState(() => obscurePin = !obscurePin);
+                            },
                           ),
                           validator: (v) => v == null || v.length != 4
                               ? 'PIN à 4 chiffres requis'
@@ -540,44 +580,41 @@ class _RegisterPageState extends State<RegisterPage>
                             onPressed: isLoading ? null : _register,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFFF6B35),
-                              disabledBackgroundColor:
-                                  Colors.grey.shade300,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                            ),
-                            child: isLoading
-                                ? const SizedBox(
-                                    height: 24,
-                                    width: 24,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2.5,
-                                    ),
-                                  )
-                                : Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        'Créer mon compte',
-                                        style: GoogleFonts.poppins(
-                                          fontSize: 14.sp,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      SizedBox(width: 2.w),
-                                      const Icon(
-                                          Icons.arrow_forward_rounded,
-                                          color: Colors.white,
-                                          size: 20),
-                                    ],
-                                  ),
-                          ),
-                        ),
-
+      disabledBackgroundColor: Colors.grey.shade300,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+    ),
+    child: isLoading
+        ? const SizedBox(
+            height: 24,
+            width: 24,
+            child: CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2.5,
+            ),
+          )
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'Créer mon compte',
+                style: GoogleFonts.poppins(
+                  fontSize: 14.sp,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 2.w),
+              const Icon(
+                  Icons.arrow_forward_rounded,
+                  color: Colors.white,
+                  size: 20),
+            ],
+          ),
+  ),
+),
                         SizedBox(height: 2.h),
 
                         // Déjà un compte
@@ -593,7 +630,10 @@ class _RegisterPageState extends State<RegisterPage>
                                 ),
                               ),
                               GestureDetector(
-                                onTap: () => Navigator.pop(context),
+                                onTap: () {
+                                  debugPrint('🔹 Lien "Se connecter" pressé');
+                                  Navigator.pop(context);
+                                },
                                 child: Text(
                                   'Se connecter',
                                   style: GoogleFonts.poppins(
@@ -624,6 +664,7 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   Widget _buildSectionTitle(String title, IconData icon) {
+    debugPrint('🔹 Construction du titre de section: $title');
     return Row(
       children: [
         Container(

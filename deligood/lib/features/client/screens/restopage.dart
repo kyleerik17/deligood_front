@@ -50,21 +50,28 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
     await fetchMenus();
   }
 
-  Future<void> fetchMenus() async {
-    final id = widget.restaurant['id'];
-    final url =
-        "https://deligood-backend.onrender.com/api/menu/items/?restaurant_id=$id";
+ Future<void> fetchMenus() async {
+  final id = widget.restaurant['id'];
+  final url =
+      "https://deligood-backend.onrender.com/api/menu/items/?restaurant_id=$id";
 
-    final res = await http.get(Uri.parse(url));
+  debugPrint("🍔 Fetching menus for restaurant ID: $id");
+  debugPrint("🌐 URL: $url");
 
-    if (res.statusCode == 200) {
-      final data = jsonDecode(res.body);
-      menus = data is List ? data : data['results'] ?? [];
-    }
+  final res = await http.get(Uri.parse(url));
 
-    setState(() => loading = false);
-    _anim.forward();
+  debugPrint("📦 Status: ${res.statusCode}");
+  debugPrint("📦 Body: ${res.body}");
+
+  if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
+    menus = data is List ? data : data['results'] ?? [];
+    debugPrint("✅ Menus count: ${menus.length}");
   }
+
+  setState(() => loading = false);
+  _anim.forward();
+}
 
   void addToCart(Map item) {
     setState(() => cart.add(item));
@@ -84,22 +91,34 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
   }
 
   Future<void> sendCart() async {
-    if (token == null) return;
+  debugPrint("🛒 SEND CART PRESSED");
+  debugPrint("🔑 TOKEN => $token");
+  debugPrint("📦 CART => ${cart.length} articles");
 
-    final url = "https://deligood-backend.onrender.com/api/orders/cart/add/";
-
-    for (var item in cart) {
-      await http.post(
-        Uri.parse(url),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Token $token",
-        },
-        body: jsonEncode({"menu_id": item['id'], "quantity": 1}),
-      );
-    }
+  if (token == null) {
+    debugPrint("❌ TOKEN NULL — abandon");
+    return;
   }
 
+  final url = "https://deligood-backend.onrender.com/api/orders/cart/add/";
+
+  for (var item in cart) {
+    debugPrint("➡️ Envoi item => ${item['id']} | ${item['name']}");
+
+    final res = await http.post(
+      Uri.parse(url),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Token $token",
+      },
+      body: jsonEncode({"menu_id": item['id'], "quantity": 1}),
+    );
+
+    debugPrint("📬 STATUS => ${res.statusCode}");
+    debugPrint("📬 BODY => ${res.body}");
+  }
+  debugPrint("✅ SEND CART DONE");
+}
   @override
   Widget build(BuildContext context) {
     final name =
@@ -209,7 +228,7 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
                       ),
                     ),
 
-                    // 🚀 BUTTON
+                    //BUTTON
                     ElevatedButton(
                       onPressed: sendCart,
                       style: ElevatedButton.styleFrom(
@@ -254,17 +273,30 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
       child: Row(
         children: [
           // 🖼 IMAGE
-          ClipRRect(
-            borderRadius: const BorderRadius.horizontal(
-              left: Radius.circular(18),
-            ),
-            child: Image.asset(
-              'assets/images/n.png',
-              width: 22.w,
-              height: 10.h,
-              fit: BoxFit.cover,
-            ),
+         ClipRRect(
+  borderRadius: const BorderRadius.horizontal(
+    left: Radius.circular(18),
+  ),
+  child: m['image'] != null && m['image'].toString().isNotEmpty
+      ? Image.network(
+          m['image'].toString(),
+          width: 22.w,
+          height: 10.h,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Image.asset(
+            'assets/images/n.png',
+            width: 22.w,
+            height: 10.h,
+            fit: BoxFit.cover,
           ),
+        )
+      : Image.asset(
+          'assets/images/n.png',
+          width: 22.w,
+          height: 10.h,
+          fit: BoxFit.cover,
+        ),
+),
 
           // 📄 INFOS
           Expanded(

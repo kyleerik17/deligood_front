@@ -109,7 +109,7 @@ class _CoursePageState extends State<CoursePage>
   // ── Init ─────────────────────────────────────────────
   Future<void> _init() async {
     try {
-      await LivreurApi.getToken();();
+      LivreurApi.getToken();();
     } catch (_) {
       if (!mounted) return;
       setState(() {
