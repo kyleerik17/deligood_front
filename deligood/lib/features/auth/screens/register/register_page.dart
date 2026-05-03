@@ -1,4 +1,4 @@
-import 'package:deligood/services/api_service.dart' as AuthApiReg;
+import 'package:deligood/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -92,60 +92,31 @@ class _RegisterPageState extends State<RegisterPage>
   }
 
   Future<void> _register() async {
-    debugPrint('🔹 Bouton "S\'inscrire" pressé');
-    debugPrint('🔹 Validation du formulaire...');
+  if (!_formKey.currentState!.validate()) return;
 
-    if (!_formKey.currentState!.validate()) {
-      debugPrint('🔹 Validation échouée');
-      return;
-    }
+  setState(() => isLoading = true);
 
-    debugPrint('🔹 Validation réussie');
-    debugPrint('🔹 Début de l\'enregistrement...');
+  try {
+    await ApiService.register(
+      phone: phoneController.text.trim(),
+      pin: pinController.text.trim(),
+      firstName: firstNameController.text.trim(),
+      lastName: lastNameController.text.trim(),
+      locality: localityController.text.trim(),
+      userType: userType,
+    );
 
-    setState(() => isLoading = true);
+    if (!mounted) return;
 
-    try {
-      debugPrint('🔹 Appel de l\'API d\'enregistrement avec les données suivantes :');
-      debugPrint('🔹 Téléphone: ${phoneController.text.trim()}');
-      debugPrint('🔹 PIN: ${pinController.text.trim()}');
-      debugPrint('🔹 Prénom: ${firstNameController.text.trim()}');
-      debugPrint('🔹 Nom: ${lastNameController.text.trim()}');
-      debugPrint('🔹 Localité: ${localityController.text.trim()}');
-      debugPrint('🔹 Type d\'utilisateur: $userType');
-
-      await AuthApiReg.register(
-        phone: phoneController.text.trim(),
-        pin: pinController.text.trim(),
-        firstName: firstNameController.text.trim(),
-        lastName: lastNameController.text.trim(),
-        locality: localityController.text.trim(),
-        userType: userType,
-      );
-
-      debugPrint('🔹 Enregistrement réussi');
-
-      if (!mounted) {
-        debugPrint('🔹 Widget non monté, annulation');
-        return;
-      }
-
+    _showSuccessDialog();
+  } catch (e) {
+    _showError(e.toString());
+  } finally {
+    if (mounted) {
       setState(() => isLoading = false);
-      debugPrint('🔹 Affichage de la boîte de dialogue de succès');
-      _showSuccessDialog();
-    } catch (e) {
-      debugPrint('🔹 Erreur lors de l\'enregistrement: $e');
-
-      if (!mounted) {
-        debugPrint('🔹 Widget non monté, annulation');
-        return;
-      }
-
-      setState(() => isLoading = false);
-      _showError(e.toString().replaceAll('Exception:', '').trim());
     }
   }
-
+}
   void _showSuccessDialog() {
     debugPrint('🔹 Affichage de la boîte de dialogue de succès');
     showDialog(

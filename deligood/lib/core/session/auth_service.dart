@@ -1,4 +1,3 @@
-
 import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/auth/auth_state.dart';
 import 'package:flutter/foundation.dart';
@@ -6,6 +5,11 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 import '../session/session_manager.dart';
+
+// ── Logger silencieux en production ──
+void _log(String msg) {
+  if (kDebugMode) print(msg);
+}
 
 class AuthService {
   final session = SessionManager();
@@ -27,9 +31,8 @@ class AuthService {
     );
 
     final normalizedPhone = normalizePhone(phone);
-
-    debugPrint("========== AUTH LOGIN DEBUG ==========");
-    debugPrint("NORMALIZED PHONE => $normalizedPhone");
+    _log('========== AUTH LOGIN ==========');
+    _log('📱 PHONE → $normalizedPhone');
 
     try {
       final res = await http.post(
@@ -38,54 +41,72 @@ class AuthService {
         body: jsonEncode({'phone_number': normalizedPhone, 'pin': pin}),
       );
 
-      debugPrint("STATUS CODE   => ${res.statusCode}");
-      debugPrint("RESPONSE BODY => ${res.body}");
+      _log('📡 STATUS → ${res.statusCode}');
+      _log('🎫 RESPONSE → ${res.body}');
 
       if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+
+        _log('🗝 RESPONSE KEYS → ${data.keys.toList()}');
+
         final user = data['user'] as Map<String, dynamic>? ?? {};
-        final token = data['token'] ?? data['access'] ?? '';
-        final userType = user['user_type'] ?? '';
+
+        // ✅ Cherche le token dans tous les champs possibles
+        final token = data['token']?.toString() ??
+            data['access']?.toString() ??
+            data['access_token']?.toString() ??
+            data['jwt']?.toString() ??
+            data['auth_token']?.toString() ??
+            user['token']?.toString() ??
+            '';
+
+        _log('🔑 TOKEN → ${token.isEmpty ? "VIDE ❌" : "OUI (${token.length} chars)"}');
+
+        if (token.isEmpty) {
+          _log('❌ AUCUN TOKEN — champs disponibles : ${data.keys.toList()}');
+          return false;
+        }
+
+        final userType = user['user_type']?.toString() ??
+            data['user_type']?.toString() ??
+            '';
+
+        final userId = int.tryParse(
+              (user['id'] ?? data['user_id'])?.toString() ?? '0',
+            ) ?? 0;
 
         await session.saveSession(
           token: token,
           userType: userType,
-          userId: user['id'] ?? 0,
-          firstName: user['first_name'],
-          lastName: user['last_name'],
-          phoneNumber: user['phone_number'],
-          email: user['email'],
+          userId: userId,
+          firstName: user['first_name']?.toString(),
+          lastName: user['last_name']?.toString(),
+          phoneNumber: user['phone_number']?.toString(),
+          email: user['email']?.toString(),
         );
 
-        // ✅ On alimente AuthState ici — une seule fois, une seule source
         AuthState.instance.setAuth(
-          token:    token,
+          token: token,
           userRole: userType,
-          orderId:  0, // mis à jour plus tard si nécessaire
+          orderId: 0,
         );
 
-        debugPrint("✅ Session sauvegardée:");
-        debugPrint("   first_name   => ${user['first_name']}");
-        debugPrint("   last_name    => ${user['last_name']}");
-        debugPrint("   phone_number => ${user['phone_number']}");
-        debugPrint("   email        => ${user['email']}");
-        debugPrint("   user_type    => $userType");
-        debugPrint("   token        => $token");
-
+        _log('✅ SESSION SAUVEGARDÉE → type=$userType | userId=$userId');
         return true;
       }
 
-      debugPrint("❌ LOGIN FAILED => ${res.body}");
+      _log('❌ LOGIN FAILED → ${res.statusCode} | ${res.body}');
       return false;
     } catch (e) {
-      debugPrint("❌ LOGIN ERROR => $e");
+      _log('❌ LOGIN ERROR → $e');
       return false;
     }
   }
 
   Future<void> logout() async {
-    AuthState.instance.clear(); // ✅ on vide AuthState au logout
+    AuthState.instance.clear();
     await session.clearSession();
+    _log('🚪 Logout effectué');
   }
 
   static Future<void> resetPin({

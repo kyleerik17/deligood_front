@@ -59,7 +59,7 @@ class _ProfilePageState extends State<ProfilePage>
   Future<void> _init() async {
     await _loadUser();
     await _fetchProfile();
-    _fadeController.forward();
+    if (mounted) _fadeController.forward(); // ✅ FIX — guard contre dispose
   }
 
   @override
@@ -108,8 +108,6 @@ class _ProfilePageState extends State<ProfilePage>
         return;
       }
 
-      // ✅ CORRECTION : la réponse est { "success": true, "data": {...} }
-      // Il faut lire response['data'], pas response directement
       final data = response['data'] as Map<String, dynamic>?;
 
       if (data == null) {
@@ -118,12 +116,10 @@ class _ProfilePageState extends State<ProfilePage>
         return;
       }
 
-      // Mise à jour SharedPreferences avec les données fraîches
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('first_name',   data['first_name']   ?? firstName);
       await prefs.setString('last_name',    data['last_name']    ?? lastName);
       await prefs.setString('phone_number', data['phone_number'] ?? phoneNumber);
-      // ✅ email n'existe pas dans le modèle User, on ne l'écrase pas
       await prefs.setString('user_type',    data['user_type']    ?? userType);
 
       final f = (data['first_name'] as String?) ?? firstName;
@@ -137,15 +133,15 @@ class _ProfilePageState extends State<ProfilePage>
         userType    = (data['user_type']    as String?) ?? userType;
         initials    = _buildInitials(f, l);
 
-        // ✅ photo_url retourné par l'API (pas avatar_base64)
         final photoUrl = data['photo_url'] as String?;
         if (photoUrl != null && photoUrl.isNotEmpty) {
-          // photo_url est une URL, pas du base64 — on garde avatarBytes du cache
-          // Si tu veux charger l'image réseau, utilise Image.network(photoUrl)
+          // photo_url est une URL réseau — utilise Image.network(photoUrl) si besoin
         }
 
         final avatar = prefs.getString('avatar_base64');
-avatarBytes = (avatar != null ? ImageUtils.decodeBase64Image(avatar) : null) ?? avatarBytes;
+        avatarBytes = (avatar != null
+            ? ImageUtils.decodeBase64Image(avatar)
+            : null) ?? avatarBytes;
 
         isLoading = false;
       });

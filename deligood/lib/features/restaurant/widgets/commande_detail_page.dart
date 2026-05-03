@@ -138,7 +138,7 @@ class _CommandeDetailPageState extends State<CommandeDetailPage>
     }
 
     final url =
-        'https://deligood-backend.onrender.com/api/orders/orders/restaurant/${widget.commande.id}/status/';
+        'https://deligood-backend.onrender.com/api/orders/restaurant/${widget.commande.id}/status/';
 
     try {
       final response = await http.patch(
@@ -156,6 +156,10 @@ class _CommandeDetailPageState extends State<CommandeDetailPage>
 
       if (response.statusCode == 200 || response.statusCode == 204) {
         HapticFeedback.heavyImpact();
+
+        // ✅ Persister l'orderId — la commande reste jusqu'à livraison
+        await prefs.setInt('active_order_id', widget.commande.id);
+
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -263,7 +267,6 @@ class _CommandeDetailPageState extends State<CommandeDetailPage>
 
     return Scaffold(
       backgroundColor: kBg,
-      // ── AppBar ──────────────────────────────
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.transparent,
@@ -305,19 +308,12 @@ class _CommandeDetailPageState extends State<CommandeDetailPage>
             physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.fromLTRB(4.w, 1.h, 4.w, 4.h),
             children: [
-              // ── Bannière statut ─────────────
               _StatusBanner(status: commande.status, color: sColor),
-
               SizedBox(height: 2.5.h),
-
-              // ── Section Client ──────────────
               _SectionLabel(label: 'Client'),
               SizedBox(height: 1.h),
               _ClientCard(commande: commande),
-
               SizedBox(height: 2.5.h),
-
-              // ── Section Articles ────────────
               _SectionLabel(
                 label: 'Articles',
                 badge: '${commande.items.length}',
@@ -326,13 +322,8 @@ class _CommandeDetailPageState extends State<CommandeDetailPage>
               ...commande.items.asMap().entries.map(
                 (e) => _ArticleRow(item: e.value, index: e.key),
               ),
-
               SizedBox(height: 2.5.h),
-
-              // ── Total ───────────────────────
               _TotalCard(commande: commande),
-
-              // ── Bouton Accepter ─────────────
               if (isPending) ...[
                 SizedBox(height: 3.h),
                 _AcceptButton(
@@ -352,7 +343,6 @@ class _CommandeDetailPageState extends State<CommandeDetailPage>
 // WIDGETS COMPOSANTS
 // ═══════════════════════════════════════════════════
 
-// ── Bannière statut ────────────────────────────────
 class _StatusBanner extends StatelessWidget {
   final String status;
   final Color color;
@@ -407,7 +397,6 @@ class _StatusBanner extends StatelessWidget {
   }
 }
 
-// ── Label de section ───────────────────────────────
 class _SectionLabel extends StatelessWidget {
   final String label;
   final String? badge;
@@ -449,7 +438,6 @@ class _SectionLabel extends StatelessWidget {
   }
 }
 
-// ── Card client ────────────────────────────────────
 class _ClientCard extends StatelessWidget {
   final CommandeResto commande;
   const _ClientCard({required this.commande});
@@ -475,7 +463,6 @@ class _ClientCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Avatar + nom
           Row(
             children: [
               Container(
@@ -513,21 +500,15 @@ class _ClientCard extends StatelessWidget {
               ),
             ],
           ),
-
           SizedBox(height: 1.5.h),
           Divider(color: Colors.grey.shade100, height: 1),
           SizedBox(height: 1.5.h),
-
-          // Téléphone
           _InfoRow(
             icon: Icons.phone_rounded,
             text: commande.phone.isNotEmpty ? commande.phone : '—',
             iconColor: kTeal,
           ),
-
           SizedBox(height: 1.h),
-
-          // Adresse
           _InfoRow(
             icon: Icons.location_on_rounded,
             text: commande.address.isNotEmpty ? commande.address : '—',
@@ -574,7 +555,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ── Ligne article ──────────────────────────────────
 class _ArticleRow extends StatelessWidget {
   final CommandeItem item;
   final int index;
@@ -611,7 +591,6 @@ class _ArticleRow extends StatelessWidget {
         ),
         child: Row(
           children: [
-            // Numéro
             Container(
               width: 9.w,
               height: 9.w,
@@ -630,10 +609,7 @@ class _ArticleRow extends StatelessWidget {
                 ),
               ),
             ),
-
             SizedBox(width: 3.w),
-
-            // Nom + détail
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -657,8 +633,6 @@ class _ArticleRow extends StatelessWidget {
                 ],
               ),
             ),
-
-            // Sous-total
             Container(
               padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 0.7.h),
               decoration: BoxDecoration(
@@ -681,7 +655,6 @@ class _ArticleRow extends StatelessWidget {
   }
 }
 
-// ── Total ──────────────────────────────────────────
 class _TotalCard extends StatelessWidget {
   final CommandeResto commande;
   const _TotalCard({required this.commande});
@@ -741,7 +714,6 @@ class _TotalCard extends StatelessWidget {
   }
 }
 
-// ── Bouton Accepter ────────────────────────────────
 class _AcceptButton extends StatelessWidget {
   final bool isProcessing;
   final VoidCallback onTap;

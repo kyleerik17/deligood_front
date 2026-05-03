@@ -38,7 +38,7 @@ class LivreurApi {
   }
 
   static Future<List<dynamic>> fetchCoursesDisponibles() async {
-    final response = await _get('/api/orders/orders/livreur/available/');
+    final response = await _get('/api/orders/livreur/available/');
     final data = _handleResponse(response);
 
     if (data is! List) {
@@ -49,12 +49,12 @@ class LivreurApi {
   }
 
   static Future<void> pickupCourse(int orderId) async {
-    final response = await _post('/api/orders/orders/livreur/$orderId/pickup/');
+    final response = await _post('/api/orders/livreur/$orderId/pickup/');
     _handleResponse(response);
   }
 
   static Future<void> markOrderAsDelivered(int orderId) async {
-    final response = await _post('/api/orders/orders/livreur/$orderId/deliver/');
+    final response = await _post('/api/orders/livreur/$orderId/deliver/');
     _handleResponse(response);
   }
 

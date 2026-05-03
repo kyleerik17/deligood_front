@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:deligood/core/api/livreur_api.dart';
-import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/livreur/screens/pages/Home_livreur.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -58,15 +57,15 @@ class CourseModel {
   }
 
   Map<String, dynamic> toJson() => {
-        'id':             id,
+        'id':              id,
         'restaurant_name': restaurantName,
-        'total_price':    totalPrice,
-        'status':         status,
-        'created_at':     createdAt.toIso8601String(),
-        'restaurant_lat': restaurantPos.latitude,
-        'restaurant_lng': restaurantPos.longitude,
-        'customer_lat':   customerPos.latitude,
-        'customer_lng':   customerPos.longitude,
+        'total_price':     totalPrice,
+        'status':          status,
+        'created_at':      createdAt.toIso8601String(),
+        'restaurant_lat':  restaurantPos.latitude,
+        'restaurant_lng':  restaurantPos.longitude,
+        'customer_lat':    customerPos.latitude,
+        'customer_lng':    customerPos.longitude,
       };
 }
 
@@ -108,8 +107,9 @@ class _CoursePageState extends State<CoursePage>
 
   // ── Init ─────────────────────────────────────────────
   Future<void> _init() async {
+    // 1. Vérifier le token
     try {
-      LivreurApi.getToken();();
+      await LivreurApi.getToken(); // ✅ corrigé : plus de double ()()
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -118,18 +118,27 @@ class _CoursePageState extends State<CoursePage>
       });
       return;
     }
+
+    // 2. Charger la course active depuis le stockage local
     await _loadActiveCourse();
-    await _fetchCourses();
+
+    // 3. Si une course est déjà en cours → rediriger directement vers HomeLivreur
     if (_activeCourse != null) {
-  Navigator.pushReplacement(
-    context,
-    MaterialPageRoute(
-      builder: (_) => HomeLivreur(course: _activeCourse),
-    ),
-  );
-}
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomeLivreur(course: _activeCourse),
+        ),
+      );
+      return; // ✅ Stop ici, pas besoin de charger la liste
+    }
+
+    // 4. Sinon, charger la liste des courses disponibles
+    await _fetchCourses();
   }
 
+  // ── Charger la course sauvegardée localement ─────────
   Future<void> _loadActiveCourse() async {
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString('active_course');
@@ -138,9 +147,19 @@ class _CoursePageState extends State<CoursePage>
     }
   }
 
+  // ── Sauvegarder la course active localement ──────────
+  Future<void> _saveCourse(CourseModel course) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('active_course', jsonEncode(course.toJson()));
+  }
+
+  // ── Fetch les courses disponibles ────────────────────
   Future<void> _fetchCourses() async {
     if (!mounted) return;
-    setState(() { _isLoading = true; _errorMessage = null; });
+    setState(() {
+      _isLoading    = true;
+      _errorMessage = null;
+    });
 
     try {
       final data = await LivreurApi.fetchCoursesDisponibles();
@@ -164,97 +183,100 @@ class _CoursePageState extends State<CoursePage>
     }
   }
 
-Future<void> _saveCourse(CourseModel course) async {
-  final prefs = await SharedPreferences.getInstance();
-  await prefs.setString('active_course', jsonEncode(course.toJson()));
-}
-
+  // ── Prendre une course ───────────────────────────────
   Future<void> _takeCourse(CourseModel course) async {
-  if (_isTaking) return;
+    if (_isTaking) return;
 
-  if (_activeCourse != null) {
-    _showSnackBar('Vous avez déjà une course en cours !', isError: true);
-    return;
-  }
+    if (_activeCourse != null) {
+      _showSnackBar('Vous avez déjà une course en cours !', isError: true);
+      return;
+    }
 
-  setState(() => _isTaking = true);
+    setState(() => _isTaking = true);
 
-  try {
-    await LivreurApi.pickupCourse(course.id);
-    if (!mounted) return;
+    try {
+      // 1. Appel API
+      await LivreurApi.pickupCourse(course.id);
+      if (!mounted) return;
 
-    // ✅ SAVE LOCAL STORAGE PROPREMENT
-    await _saveCourse(course);
+      // 2. Sauvegarder en local (persist jusqu'à livraison)
+      await _saveCourse(course);
 
-    setState(() {
-      _isTaking = false;
-      _activeCourse = course;
-    });
+      // 3. Mettre à jour l'état local
+      setState(() {
+        _isTaking     = false;
+        _activeCourse = course;
+      });
 
-    await _fetchCourses();
+      _showSnackBar('Course prise avec succès !', isError: false);
 
-    _showSnackBar('Course prise avec succès !', isError: false);
+      // 4. Courte pause pour que le snackbar soit visible
+      await Future.delayed(const Duration(milliseconds: 600));
+      if (!mounted) return;
 
-    await Future.delayed(const Duration(milliseconds: 800));
-    if (!mounted) return;
+      // 5. Navigation vers HomeLivreur avec transition slide
+      Navigator.push(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => HomeLivreur(course: course),
+          transitionsBuilder: (_, animation, __, child) {
+            final tween = Tween(
+              begin: const Offset(1, 0),
+              end: Offset.zero,
+            ).chain(CurveTween(curve: Curves.easeInOut));
 
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (_, __, ___) => HomeLivreur(course: course),
-        transitionsBuilder: (_, animation, __, child) {
-          final tween = Tween(
-            begin: const Offset(1, 0),
-            end: Offset.zero,
-          ).chain(CurveTween(curve: Curves.easeInOut));
+            return SlideTransition(
+              position: animation.drive(tween),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 600),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
 
-          return SlideTransition(
-            position: animation.drive(tween),
-            child: child,
-          );
-        },
-        transitionDuration: const Duration(milliseconds: 600),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
+      setState(() => _isTaking = false);
 
-    setState(() => _isTaking = false);
+      final msg = e.toString();
 
-    final msg = e.toString();
+      _showSnackBar(
+        msg.contains('400')
+            ? 'Cette course a déjà été prise par un autre livreur.'
+            : msg.contains('timeout') || msg.contains('SocketException')
+                ? 'Pas de connexion réseau.'
+                : 'Impossible de prendre la course.',
+        isError: true,
+      );
 
-    _showSnackBar(
-      msg.contains('400')
-          ? 'Cette course a déjà été prise par un autre livreur.'
-          : msg.contains('timeout') || msg.contains('SocketException')
-              ? 'Pas de connexion réseau.'
-              : 'Impossible de prendre la course.',
-      isError: true,
-    );
-
-    if (msg.contains('400')) {
-      await _fetchCourses();
+      // Rafraîchir la liste si la course n'est plus disponible
+      if (msg.contains('400')) {
+        await _fetchCourses();
+      }
     }
   }
-}
 
+  // ── SnackBar ─────────────────────────────────────────
   void _showSnackBar(String message, {required bool isError}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
           Icon(
             isError ? Icons.error_outline : Icons.check_circle_outline,
-            color: kWhite, size: 20,
+            color: kWhite,
+            size: 20,
           ),
           const SizedBox(width: 10),
           Expanded(
-              child: Text(message,
-                  style: GoogleFonts.poppins(fontSize: 13, color: kWhite))),
+            child: Text(
+              message,
+              style: GoogleFonts.poppins(fontSize: 13, color: kWhite),
+            ),
+          ),
         ]),
         backgroundColor: isError ? kError : kSuccess,
         behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         margin: EdgeInsets.all(4.w),
         duration: const Duration(milliseconds: 2500),
       ),
@@ -292,7 +314,9 @@ Future<void> _saveCourse(CourseModel course) async {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                        color: Colors.black.withOpacity(0.06), blurRadius: 8)
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 8,
+                    )
                   ],
                 ),
                 child: const Icon(Icons.refresh_rounded,
@@ -305,14 +329,16 @@ Future<void> _saveCourse(CourseModel course) async {
       body: Column(
         children: [
           // ── Banner course active ──
-          if (_activeCourse != null) _ActiveCourseBar(
-            course: _activeCourse!,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => HomeLivreur(course: _activeCourse)),
+          if (_activeCourse != null)
+            _ActiveCourseBar(
+              course: _activeCourse!,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => HomeLivreur(course: _activeCourse),
+                ),
+              ),
             ),
-          ),
 
           // ── Contenu ──
           Expanded(child: _buildBody()),
@@ -343,7 +369,9 @@ Future<void> _saveCourse(CourseModel course) async {
             builder: (_, v, child) => Opacity(
               opacity: v,
               child: Transform.translate(
-                  offset: Offset(0, 20 * (1 - v)), child: child),
+                offset: Offset(0, 20 * (1 - v)),
+                child: child,
+              ),
             ),
             child: _CourseCard(
               course: _courses[i],
@@ -367,15 +395,18 @@ Future<void> _saveCourse(CourseModel course) async {
           borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withOpacity(0.07), blurRadius: 20)
+              color: Colors.black.withOpacity(0.07),
+              blurRadius: 20,
+            )
           ],
         ),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const CircularProgressIndicator(color: kOrange, strokeWidth: 2.5),
           SizedBox(height: 2.h),
-          Text('Chargement des courses…',
-              style: GoogleFonts.poppins(
-                  fontSize: 12.sp, color: kTextSecondary)),
+          Text(
+            'Chargement des courses…',
+            style: GoogleFonts.poppins(fontSize: 12.sp, color: kTextSecondary),
+          ),
         ]),
       ),
     );
@@ -393,30 +424,38 @@ Future<void> _saveCourse(CourseModel course) async {
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.07),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8))
+                color: Colors.black.withOpacity(0.07),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              )
             ],
           ),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
               padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                  color: kError.withOpacity(0.08), shape: BoxShape.circle),
-              child: const Icon(Icons.wifi_off_rounded,
-                  color: kError, size: 44),
+                color: kError.withOpacity(0.08),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.wifi_off_rounded, color: kError, size: 44),
             ),
             SizedBox(height: 2.h),
-            Text('Oups !',
-                style: GoogleFonts.playfairDisplay(
-                    fontSize: 18.sp,
-                    fontWeight: FontWeight.bold,
-                    color: kTextPrimary)),
+            Text(
+              'Oups !',
+              style: GoogleFonts.playfairDisplay(
+                fontSize: 18.sp,
+                fontWeight: FontWeight.bold,
+                color: kTextPrimary,
+              ),
+            ),
             SizedBox(height: 0.8.h),
             Text(
               _errorMessage!,
               style: GoogleFonts.poppins(
-                  fontSize: 11.sp, color: kTextSecondary, height: 1.5),
+                fontSize: 11.sp,
+                color: kTextSecondary,
+                height: 1.5,
+              ),
               textAlign: TextAlign.center,
             ),
             SizedBox(height: 2.5.h),
@@ -429,19 +468,22 @@ Future<void> _saveCourse(CourseModel course) async {
                   backgroundColor: kOrange,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.refresh_rounded,
-                        color: kWhite, size: 18),
+                    const Icon(Icons.refresh_rounded, color: kWhite, size: 18),
                     SizedBox(width: 2.w),
-                    Text('Réessayer',
-                        style: GoogleFonts.poppins(
-                            fontSize: 13.sp,
-                            fontWeight: FontWeight.bold,
-                            color: kWhite)),
+                    Text(
+                      'Réessayer',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.bold,
+                        color: kWhite,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -459,21 +501,25 @@ Future<void> _saveCourse(CourseModel course) async {
         Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
-              color: kOrange.withOpacity(0.08), shape: BoxShape.circle),
+            color: kOrange.withOpacity(0.08),
+            shape: BoxShape.circle,
+          ),
           child: const Icon(Icons.directions_bike_rounded,
               color: kOrange, size: 52),
         ),
         SizedBox(height: 2.5.h),
-        Text('Aucune course disponible',
-            style: GoogleFonts.playfairDisplay(
-                fontSize: 18.sp,
-                fontWeight: FontWeight.bold,
-                color: kTextPrimary)),
+        Text(
+          'Aucune course disponible',
+          style: GoogleFonts.playfairDisplay(
+            fontSize: 18.sp,
+            fontWeight: FontWeight.bold,
+            color: kTextPrimary,
+          ),
+        ),
         SizedBox(height: 0.8.h),
         Text(
           'Tirez vers le bas pour recharger',
-          style: GoogleFonts.poppins(
-              fontSize: 11.sp, color: kTextSecondary),
+          style: GoogleFonts.poppins(fontSize: 11.sp, color: kTextSecondary),
         ),
       ]),
     );
@@ -498,9 +544,10 @@ class _ActiveCourseBar extends StatelessWidget {
           color: kSuccess,
           boxShadow: [
             BoxShadow(
-                color: kSuccess.withOpacity(0.30),
-                blurRadius: 12,
-                offset: const Offset(0, 4))
+              color: kSuccess.withOpacity(0.30),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            )
           ],
         ),
         child: Row(
@@ -519,31 +566,39 @@ class _ActiveCourseBar extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Course en cours',
-                      style: GoogleFonts.poppins(
-                          color: kWhite,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12.sp)),
-                  Text(course.restaurantName,
-                      style: GoogleFonts.poppins(
-                          color: Colors.white.withOpacity(0.80),
-                          fontSize: 11.sp)),
+                  Text(
+                    'Course en cours',
+                    style: GoogleFonts.poppins(
+                      color: kWhite,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12.sp,
+                    ),
+                  ),
+                  Text(
+                    course.restaurantName,
+                    style: GoogleFonts.poppins(
+                      color: Colors.white.withOpacity(0.80),
+                      fontSize: 11.sp,
+                    ),
+                  ),
                 ],
               ),
             ),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.20),
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text('Voir',
-                    style: GoogleFonts.poppins(
-                        color: kWhite,
-                        fontSize: 11.sp,
-                        fontWeight: FontWeight.w600)),
+                Text(
+                  'Voir',
+                  style: GoogleFonts.poppins(
+                    color: kWhite,
+                    fontSize: 11.sp,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(width: 4),
                 const Icon(Icons.arrow_forward_ios_rounded,
                     color: kWhite, size: 12),
@@ -582,9 +637,10 @@ class _CourseCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 16,
-              offset: const Offset(0, 4)),
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Material(
@@ -670,15 +726,21 @@ class _CourseCard extends StatelessWidget {
                     ),
                     child: isLoading
                         ? const SizedBox(
-                            width: 18, height: 18,
+                            width: 18,
+                            height: 18,
                             child: CircularProgressIndicator(
-                                strokeWidth: 2, color: kWhite))
-                        : Text('Prendre',
+                              strokeWidth: 2,
+                              color: kWhite,
+                            ),
+                          )
+                        : Text(
+                            'Prendre',
                             style: GoogleFonts.poppins(
                               fontSize: 11.sp,
                               fontWeight: FontWeight.bold,
                               color: kWhite,
-                            )),
+                            ),
+                          ),
                   ),
                 ),
               ],

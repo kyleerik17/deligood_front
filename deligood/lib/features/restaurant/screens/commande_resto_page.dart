@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:deligood/core/session/auth_service.dart';
+import 'package:deligood/features/auth/auth_state.dart';
 import 'package:deligood/features/restaurant/widgets/commande_detail_page.dart';
 import 'package:deligood/features/restaurant/widgets/commande_resto_model.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
@@ -31,7 +35,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
   List<CommandeResto> commandes = [];
   bool isLoading = true;
   String errorMessage = '';
-  String accessToken = '';
 
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
@@ -42,12 +45,11 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
-    )..forward();
+    );
     _fadeAnimation = CurvedAnimation(
       parent: _fadeController,
       curve: Curves.easeIn,
     );
-
     fetchCommandes();
   }
 
@@ -59,69 +61,140 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
 
   String get _baseUrl => 'https://deligood-backend.onrender.com';
 
-  // ── API ───────────────────────────────────────────────
-  Future<List<CommandeResto>> _fetchCommandesResto() async {
+  // ── Récupère le token depuis AuthState (RAM) ou SharedPrefs (fallback) ──
+  Future<String?> _getToken() async {
+    // ✅ Priorité 1 : token déjà chargé en mémoire
+    final inMemory = AuthState.instance.token;
+    if (inMemory.isNotEmpty) {
+      debugPrint('🔑 TOKEN (RAM) → OUI (${inMemory.length} chars)');
+      return inMemory;
+    }
+
+    // ✅ Priorité 2 : fallback SharedPreferences
     final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('access_token');
+    debugPrint('🗝 CLÉS PREFS → ${prefs.getKeys()}');
+    final fromPrefs = prefs.getString('access_token');
+    debugPrint('🔑 TOKEN (PREFS) → ${fromPrefs != null && fromPrefs.isNotEmpty ? "OUI (${fromPrefs.length} chars)" : "NON ❌"}');
+
+    // ✅ Si trouvé dans prefs, recharge AuthState pour les prochains appels
+    if (fromPrefs != null && fromPrefs.isNotEmpty) {
+      await AuthState.instance.loadFromPrefs();
+    }
+
+    return fromPrefs;
+  }
+
+  Future<List<CommandeResto>> _fetchCommandesResto() async {
+    final token = await _getToken();
 
     if (token == null || token.isEmpty) {
-      throw Exception('Token introuvable. Veuillez vous reconnecter.');
+      throw Exception('Session expirée. Veuillez vous reconnecter.');
     }
-    accessToken = token;
 
-    final isJwt = token.startsWith('ey');
+    final cleanToken = token.startsWith('Token ') ? token : 'Token $token';
+
+    final url = Uri.parse('$_baseUrl/api/orders/restaurant/');
     final headers = {
       'Content-Type': 'application/json',
-      'Authorization': isJwt ? 'Bearer $token' : 'Token $token',
+      'Accept': 'application/json',
+      'Authorization': cleanToken,
     };
 
-    debugPrint('🌐 GET /api/orders/orders/restaurant/');
-    debugPrint('🔑 Token type : ${isJwt ? "JWT Bearer" : "Token"}');
+    debugPrint('🌐 REQUEST → $url');
 
-    final response = await http.get(
-      Uri.parse('$_baseUrl/api/orders/orders/restaurant/'),
-      headers: headers,
-    );
+    late http.Response response;
 
-    debugPrint('📡 Status code : ${response.statusCode}');
-
-    if (response.statusCode == 200) {
-      final List data = jsonDecode(response.body);
-      debugPrint('📦 ${data.length} commande(s) reçue(s)');
-      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-      return data
-          .map((e) => CommandeResto.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } else if (response.statusCode == 401) {
-      debugPrint('🚫 Token expiré — suppression locale');
-      await prefs.remove('access_token');
-      throw Exception('Session expirée. Veuillez vous reconnecter.');
-    } else {
-      debugPrint('❌ Erreur serveur : ${response.statusCode}');
-      debugPrint('❌ Body : ${response.body}');
-      throw Exception('Erreur serveur : ${response.statusCode}');
+    try {
+      response = await http.get(url, headers: headers).timeout(
+        const Duration(seconds: 30),
+        onTimeout: () {
+          throw Exception(
+            'Délai dépassé — le serveur Render est peut-être en veille. Réessaie dans 30s.',
+          );
+        },
+      );
+    } on TimeoutException catch (e) {
+      throw Exception('Timeout: $e');
+    } catch (e) {
+      throw Exception('Erreur réseau: $e');
     }
+
+    debugPrint('📡 STATUS → ${response.statusCode}');
+    debugPrint('📡 BODY (500 chars) → ${response.body.substring(0, response.body.length.clamp(0, 500))}');
+
+    if (response.body.trim().startsWith('<')) {
+      throw Exception('Le serveur renvoie du HTML. Vérifie l\'URL de l\'endpoint.');
+    }
+
+    if (response.statusCode == 401) {
+      // Token expiré côté serveur — on nettoie tout
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('access_token');
+      AuthState.instance.clear();
+      throw Exception('Session expirée. Veuillez vous reconnecter.');
+    }
+
+    if (response.statusCode == 403) {
+      throw Exception('Accès refusé (403). Ce compte n\'a pas les droits restaurant.');
+    }
+
+    if (response.statusCode == 404) {
+      throw Exception('Endpoint introuvable (404). Vérifie l\'URL de l\'API.');
+    }
+
+    if (response.statusCode != 200) {
+      throw Exception('Erreur serveur: ${response.statusCode}');
+    }
+
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(response.body);
+    } catch (_) {
+      throw Exception('Réponse JSON invalide du serveur.');
+    }
+
+    List data = [];
+    if (decoded is List) {
+      data = decoded;
+    } else if (decoded is Map) {
+      data = decoded['results'] ??
+          decoded['data'] ??
+          decoded['orders'] ??
+          decoded['commandes'] ??
+          [];
+    } else {
+      throw Exception('Format de réponse inattendu.');
+    }
+
+    debugPrint('📦 ${data.length} commande(s) reçue(s)');
+
+    return data
+        .map((e) => CommandeResto.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
   }
 
   Future<void> fetchCommandes() async {
+    if (!mounted) return;
     setState(() {
       isLoading = true;
       errorMessage = '';
     });
+
     try {
       final data = await _fetchCommandesResto();
+      if (!mounted) return;
       setState(() {
         commandes = data;
         isLoading = false;
       });
       _fadeController.forward(from: 0);
     } catch (e) {
-      debugPrint('💥 fetchCommandes error : $e');
+      if (!mounted) return;
       setState(() {
-        errorMessage = e.toString();
+        errorMessage = e.toString().replaceAll('Exception: ', '');
         isLoading = false;
       });
+      debugPrint('💥 fetchCommandes error : $e');
     }
   }
 
@@ -237,15 +310,14 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
         child: isLoading
             ? _buildLoading()
             : errorMessage.isNotEmpty
-            ? _buildError()
-            : commandes.isEmpty
-            ? _buildEmpty()
-            : _buildList(),
+                ? _buildError()
+                : commandes.isEmpty
+                    ? _buildEmpty()
+                    : _buildList(),
       ),
     );
   }
 
-  // ── Loading ───────────────────────────────────────────
   Widget _buildLoading() {
     return Center(
       child: Container(
@@ -264,10 +336,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
             SizedBox(height: 2.h),
             Text(
               'Chargement des commandes…',
-              style: GoogleFonts.poppins(
-                fontSize: 12.sp,
-                color: kTextSecondary,
-              ),
+              style: GoogleFonts.poppins(fontSize: 12.sp, color: kTextSecondary),
             ),
           ],
         ),
@@ -275,7 +344,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     );
   }
 
-  // ── Erreur ────────────────────────────────────────────
   Widget _buildError() {
     return Center(
       child: Padding(
@@ -302,11 +370,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                   color: kError.withOpacity(0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.wifi_off_rounded,
-                  color: kError,
-                  size: 44,
-                ),
+                child: const Icon(Icons.wifi_off_rounded, color: kError, size: 44),
               ),
               SizedBox(height: 2.h),
               Text(
@@ -319,7 +383,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
               ),
               SizedBox(height: 0.8.h),
               Text(
-                errorMessage.replaceAll('Exception: ', ''),
+                errorMessage,
                 style: GoogleFonts.poppins(
                   fontSize: 11.sp,
                   color: kTextSecondary,
@@ -343,11 +407,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(
-                        Icons.refresh_rounded,
-                        color: kWhite,
-                        size: 18,
-                      ),
+                      const Icon(Icons.refresh_rounded, color: kWhite, size: 18),
                       SizedBox(width: 2.w),
                       Text(
                         'Réessayer',
@@ -368,7 +428,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     );
   }
 
-  // ── Empty ─────────────────────────────────────────────
   Widget _buildEmpty() {
     return Center(
       child: Column(
@@ -380,11 +439,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
               color: kOrange.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.receipt_long_rounded,
-              color: kOrange,
-              size: 52,
-            ),
+            child: const Icon(Icons.receipt_long_rounded, color: kOrange, size: 52),
           ),
           SizedBox(height: 2.5.h),
           Text(
@@ -410,7 +465,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     );
   }
 
-  // ── Liste ─────────────────────────────────────────────
   Widget _buildList() {
     return FadeTransition(
       opacity: _fadeAnimation,
@@ -428,7 +482,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     );
   }
 
-  // ── Card commande ─────────────────────────────────────
   Widget _buildCard(CommandeResto commande, int index) {
     final color = _statusColor(commande.status);
     final icon = _statusIcon(commande.status);
@@ -441,7 +494,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
         ? '${commande.total.toStringAsFixed(0)} FCFA'
         : '— FCFA';
 
-    // Résumé "TCHEP ×2, Attiéké ×1"
     final articlesResume = commande.items
         .map((e) => '${e.name} ×${e.quantity}')
         .join(', ');
@@ -482,7 +534,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Header : avatar + nom + chevron ──
                 Row(
                   children: [
                     Container(
@@ -491,10 +542,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                       decoration: BoxDecoration(
                         color: color.withOpacity(0.12),
                         shape: BoxShape.circle,
-                        border: Border.all(
-                          color: color.withOpacity(0.3),
-                          width: 1.5,
-                        ),
+                        border: Border.all(color: color.withOpacity(0.3), width: 1.5),
                       ),
                       child: Center(
                         child: Text(
@@ -507,9 +555,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                         ),
                       ),
                     ),
-
                     SizedBox(width: 3.w),
-
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -524,9 +570,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                           ),
                           SizedBox(height: 0.3.h),
                           Text(
-                            commande.items.isEmpty
-                                ? 'Aucun article'
-                                : articlesResume,
+                            commande.items.isEmpty ? 'Aucun article' : articlesResume,
                             style: GoogleFonts.poppins(
                               fontSize: 10.sp,
                               color: kTextSecondary,
@@ -537,7 +581,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                         ],
                       ),
                     ),
-
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
@@ -557,22 +600,15 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                 Divider(color: Colors.grey.shade100, height: 1),
                 SizedBox(height: 1.5.h),
 
-                // ── Footer : badge statut + montant ──
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 3.w,
-                        vertical: 0.7.h,
-                      ),
+                      padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 0.7.h),
                       decoration: BoxDecoration(
                         color: color.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: color.withOpacity(0.25),
-                          width: 1,
-                        ),
+                        border: Border.all(color: color.withOpacity(0.25), width: 1),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -590,12 +626,8 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                         ],
                       ),
                     ),
-
                     Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: 3.w,
-                        vertical: 0.7.h,
-                      ),
+                      padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 0.7.h),
                       decoration: BoxDecoration(
                         color: kOrange.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(20),

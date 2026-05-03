@@ -4,16 +4,15 @@ import 'package:deligood/core/api/livreur_api.dart';
 import 'package:deligood/features/livreur/screens/course_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 import 'package:gap/gap.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// 🗺️ Remplace par ta clé API Maptiler (gratuite sur maptiler.com)
 const String kMaptilerKey = "aUpTxlfy9X9wGiCprfoR";
 
-// 🎨 COLORS
 const kOrange = Color(0xFFFF6B35);
 const kTeal = Color(0xFF00CCBC);
 const kBg = Color(0xFFF7F3EF);
@@ -22,7 +21,6 @@ const kTextSecondary = Colors.black54;
 
 class HomeLivreur extends StatefulWidget {
   final CourseModel? course;
-
   const HomeLivreur({super.key, this.course});
 
   @override
@@ -37,8 +35,8 @@ class _HomeLivreurState extends State<HomeLivreur> {
   Timer? timer;
   bool _delivered = false;
   bool _loading = true;
+  bool _locationError = false; // ✅ flag si GPS refusé
 
-  // 🗺️ Controller pour centrer la carte sur le livreur
   final MapController _mapController = MapController();
 
   @override
@@ -47,48 +45,6 @@ class _HomeLivreurState extends State<HomeLivreur> {
     _loadCourse();
   }
 
-  Future<void> _loadCourse() async {
-  CourseModel? course = widget.course;
-
-  final prefs = await SharedPreferences.getInstance();
-
-  // 1️⃣ priorité widget (navigation directe)
-  if (course != null) {
-    await prefs.setString(
-      'active_course',
-      jsonEncode(course.toJson()),
-    );
-  } 
-  // 2️⃣ sinon fallback stockage local
-  else {
-    final saved = prefs.getString('active_course');
-    if (saved != null) {
-      course = CourseModel.fromJson(jsonDecode(saved));
-    }
-  }
-
-  if (!mounted) return;
-
-  if (course != null) {
-    setState(() {
-      restaurantPos = course!.restaurantPos;
-      clientPos = course.customerPos;
-      orderId = course.id;
-      livreurPos = LatLng(
-        restaurantPos!.latitude - 0.0007,
-        restaurantPos!.longitude - 0.0007,
-      );
-      _loading = false;
-    });
-
-    timer = Timer.periodic(
-      const Duration(seconds: 2),
-      (_) => moveLivreur(),
-    );
-  } else {
-    setState(() => _loading = false);
-  }
-}
   @override
   void dispose() {
     timer?.cancel();
@@ -96,40 +52,120 @@ class _HomeLivreurState extends State<HomeLivreur> {
     super.dispose();
   }
 
-  void moveLivreur() {
-    if (orderId == 0 || _delivered || livreurPos == null || clientPos == null) {
-      return;
+  // ── Récupérer la position GPS réelle du livreur ──────
+  Future<LatLng?> _getLivreurPosition() async {
+    try {
+      // Vérifie si le service GPS est activé
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        debugPrint('⚠️ GPS désactivé');
+        return null;
+      }
+
+      // Vérifie / demande la permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          debugPrint('⚠️ Permission GPS refusée');
+          return null;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        debugPrint('⚠️ Permission GPS refusée définitivement');
+        return null;
+      }
+
+      // Récupère la position
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      debugPrint('✅ Position livreur : ${position.latitude}, ${position.longitude}');
+      return LatLng(position.latitude, position.longitude);
+    } catch (e) {
+      debugPrint('❌ Erreur GPS : $e');
+      return null;
+    }
+  }
+
+  // ── Chargement de la course ───────────────────────────
+  Future<void> _loadCourse() async {
+    CourseModel? course = widget.course;
+    final prefs = await SharedPreferences.getInstance();
+
+    if (course != null) {
+      await prefs.setString('active_course', jsonEncode(course.toJson()));
+    } else {
+      final saved = prefs.getString('active_course');
+      if (saved != null) {
+        course = CourseModel.fromJson(jsonDecode(saved));
+      }
     }
 
-    final newPos = LatLng(
-      livreurPos!.latitude +
-          (clientPos!.latitude - livreurPos!.latitude) * 0.12,
-      livreurPos!.longitude +
-          (clientPos!.longitude - livreurPos!.longitude) * 0.12,
-    );
+    if (!mounted) return;
 
-    setState(() => livreurPos = newPos);
+    if (course != null) {
+      // ✅ Récupérer la vraie position GPS du livreur
+      final gpsPos = await _getLivreurPosition();
 
-    // ✅ Recentrer la carte sur la nouvelle position du livreur
-    try {
-      _mapController.move(newPos, _mapController.camera.zoom);
-    } catch (_) {}
+      if (!mounted) return;
+
+      setState(() {
+        restaurantPos = course!.restaurantPos;
+        clientPos = course.customerPos;
+        orderId = course.id;
+
+        if (gpsPos != null) {
+          // ✅ Position réelle du livreur
+          livreurPos = gpsPos;
+          _locationError = false;
+        } else {
+          // ⚠️ Fallback : légèrement avant le restaurant
+          livreurPos = LatLng(
+            restaurantPos!.latitude - 0.0007,
+            restaurantPos!.longitude - 0.0007,
+          );
+          _locationError = true;
+        }
+
+        _loading = false;
+      });
+
+      // ✅ Mise à jour GPS toutes les 5 secondes (position réelle)
+      timer = Timer.periodic(const Duration(seconds: 5), (_) async {
+        final pos = await _getLivreurPosition();
+        if (pos != null && mounted) {
+          setState(() => livreurPos = pos);
+          try {
+            _mapController.move(pos, _mapController.camera.zoom);
+          } catch (_) {}
+        }
+      });
+
+    } else {
+      setState(() => _loading = false);
+    }
   }
 
-  double calculateDistance(LatLng start, LatLng end) {
-    final Distance distance = Distance();
-    return distance.as(LengthUnit.Meter, start, end);
+  double _calculateDistance(LatLng start, LatLng end) {
+    return const Distance().as(LengthUnit.Meter, start, end);
   }
 
-  Future<void> clearSavedCourse() async {
+  Future<void> _clearSavedCourse() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('active_course');
   }
 
-  Future<void> markAsDelivered() async {
+  Future<void> _markAsDelivered() async {
     if (orderId <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Commande invalide")),
+        SnackBar(
+          content: Text('Commande invalide', style: GoogleFonts.poppins()),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
       return;
     }
@@ -138,8 +174,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
       await LivreurApi.markOrderAsDelivered(orderId);
       if (!mounted) return;
 
-      await clearSavedCourse();
-
+      await _clearSavedCourse();
       setState(() => _delivered = true);
       timer?.cancel();
 
@@ -155,6 +190,25 @@ class _HomeLivreurState extends State<HomeLivreur> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
+      );
+
+      await Future.delayed(const Duration(milliseconds: 1500));
+      if (!mounted) return;
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const CoursePage(),
+          transitionsBuilder: (_, animation, __, child) => SlideTransition(
+            position: Tween(
+              begin: const Offset(-1, 0),
+              end: Offset.zero,
+            ).chain(CurveTween(curve: Curves.easeInOut)).animate(animation),
+            child: child,
+          ),
+          transitionDuration: const Duration(milliseconds: 500),
+        ),
+        (route) => false,
       );
     } catch (e) {
       if (!mounted) return;
@@ -174,7 +228,17 @@ class _HomeLivreurState extends State<HomeLivreur> {
       return Scaffold(
         backgroundColor: kBg,
         body: Center(
-          child: CircularProgressIndicator(color: kOrange),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(color: kOrange),
+              Gap(2.h),
+              Text(
+                'Récupération de votre position…',
+                style: GoogleFonts.poppins(color: kTextSecondary),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -189,11 +253,32 @@ class _HomeLivreurState extends State<HomeLivreur> {
               Icon(Icons.delivery_dining, size: 64, color: Colors.grey.shade300),
               Gap(2.h),
               Text(
-                "Aucune course en cours",
+                'Aucune course en cours',
                 style: GoogleFonts.poppins(
                   fontSize: 16.sp,
                   fontWeight: FontWeight.bold,
                   color: kTextSecondary,
+                ),
+              ),
+              Gap(2.h),
+              ElevatedButton(
+                onPressed: () => Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CoursePage()),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kOrange,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: EdgeInsets.symmetric(horizontal: 6.w, vertical: 1.5.h),
+                ),
+                child: Text(
+                  'Voir les courses',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -202,14 +287,14 @@ class _HomeLivreurState extends State<HomeLivreur> {
       );
     }
 
-    final distanceClient = calculateDistance(livreurPos!, clientPos!);
-    final distanceRestaurant = calculateDistance(livreurPos!, restaurantPos!);
+    final distanceClient = _calculateDistance(livreurPos!, clientPos!);
+    final distanceRestaurant = _calculateDistance(livreurPos!, restaurantPos!);
 
     return Scaffold(
       backgroundColor: kBg,
       body: Column(
         children: [
-          // ======================== AppBar ========================
+          // ── AppBar ──
           Container(
             width: double.infinity,
             padding: EdgeInsets.fromLTRB(4.w, 5.h, 4.w, 2.h),
@@ -224,23 +309,49 @@ class _HomeLivreurState extends State<HomeLivreur> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Icon(Icons.delivery_dining, color: Colors.white, size: 32),
+                GestureDetector(
+                  onTap: () => Navigator.maybePop(context),
+                  child: const Icon(Icons.arrow_back_ios_new,
+                      color: Colors.white, size: 22),
+                ),
                 Text(
-                  "Suivi Livreur",
+                  'Suivi Livreur',
                   style: GoogleFonts.playfairDisplay(
                     color: Colors.white,
                     fontSize: 19.sp,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const Icon(Icons.more_vert, color: Colors.white, size: 32),
+                const Icon(Icons.delivery_dining, color: Colors.white, size: 28),
               ],
             ),
           ),
 
+          // ✅ Bannière avertissement si GPS indisponible
+          if (_locationError)
+            Container(
+              width: double.infinity,
+              color: Colors.orange.shade100,
+              padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 0.8.h),
+              child: Row(
+                children: [
+                  const Icon(Icons.location_off, color: Colors.orange, size: 18),
+                  Gap(2.w),
+                  Expanded(
+                    child: Text(
+                      'Position GPS indisponible — position approximative utilisée',
+                      style: GoogleFonts.poppins(
+                        fontSize: 10.sp,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           Gap(2.h),
 
-          // ======================== Contenu principal ========================
           Expanded(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -248,7 +359,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
                 padding: EdgeInsets.only(bottom: 4.h),
                 child: Column(
                   children: [
-                    // ============ MAP ============
+                    // ── Carte ──
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 4.w),
                       child: ClipRRect(
@@ -260,26 +371,21 @@ class _HomeLivreurState extends State<HomeLivreur> {
                             options: MapOptions(
                               initialCenter: livreurPos!,
                               initialZoom: 16,
-                              // ✅ Désactive la rotation accidentelle sur mobile
                               interactionOptions: const InteractionOptions(
                                 flags: InteractiveFlag.all &
                                     ~InteractiveFlag.rotate,
                               ),
                             ),
                             children: [
-                              // ✅ Maptiler — optimisé mobile, CDN rapide mondial
                               TileLayer(
                                 urlTemplate:
                                     "https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=$kMaptilerKey",
                                 userAgentPackageName: "com.deligood.app",
-                                // ✅ Cache des tuiles pour économiser la data
                                 maxZoom: 19,
-                                // Fallback si une tuile échoue
                                 errorTileCallback: (tile, error, stackTrace) {
                                   debugPrint('Tile error: $error');
                                 },
                               ),
-                              // Polyline trajet
                               PolylineLayer(
                                 polylines: [
                                   Polyline(
@@ -295,27 +401,14 @@ class _HomeLivreurState extends State<HomeLivreur> {
                                   ),
                                 ],
                               ),
-                              // Markers
                               MarkerLayer(
                                 markers: [
-                                  _customMarker(
-                                    restaurantPos!,
-                                    "Restaurant",
-                                    Colors.orange,
-                                    Icons.restaurant,
-                                  ),
-                                  _customMarker(
-                                    clientPos!,
-                                    "Client",
-                                    Colors.blue,
-                                    Icons.person_pin_circle,
-                                  ),
-                                  _customMarker(
-                                    livreurPos!,
-                                    "Livreur",
-                                    Colors.red,
-                                    Icons.delivery_dining,
-                                  ),
+                                  _customMarker(restaurantPos!, 'Restaurant',
+                                      Colors.orange, Icons.restaurant),
+                                  _customMarker(clientPos!, 'Client',
+                                      Colors.blue, Icons.person_pin_circle),
+                                  _customMarker(livreurPos!, 'Vous',
+                                      Colors.red, Icons.delivery_dining),
                                 ],
                               ),
                             ],
@@ -326,14 +419,12 @@ class _HomeLivreurState extends State<HomeLivreur> {
 
                     Gap(2.h),
 
-                    // ============ INDICATEUR D'ÉTAPES ============
+                    // ── Étapes ──
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 4.w),
                       child: Container(
                         padding: EdgeInsets.symmetric(
-                          vertical: 1.5.h,
-                          horizontal: 4.w,
-                        ),
+                            vertical: 1.5.h, horizontal: 4.w),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(16),
@@ -347,11 +438,13 @@ class _HomeLivreurState extends State<HomeLivreur> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceAround,
                           children: [
-                            _stepIndicator("Restaurant", Colors.orange, Icons.restaurant),
+                            _stepIndicator('Restaurant', Colors.orange,
+                                Icons.restaurant),
                             _lineBetween(),
-                            _stepIndicator("Livreur", Colors.red, Icons.delivery_dining),
+                            _stepIndicator(
+                                'Vous', Colors.red, Icons.delivery_dining),
                             _lineBetween(),
-                            _stepIndicator("Client", Colors.blue, Icons.person),
+                            _stepIndicator('Client', Colors.blue, Icons.person),
                           ],
                         ),
                       ),
@@ -359,20 +452,20 @@ class _HomeLivreurState extends State<HomeLivreur> {
 
                     Gap(2.h),
 
-                    // ============ CARTES DE DISTANCE ============
+                    // ── Distances ──
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 4.w),
                       child: Column(
                         children: [
                           _infoCard(
-                            title: "Livreur → Restaurant",
+                            title: 'Vous → Restaurant',
                             value: _formatDistance(distanceRestaurant),
                             color: Colors.orange,
                             icon: Icons.store,
                           ),
                           Gap(1.h),
                           _infoCard(
-                            title: "Livreur → Client",
+                            title: 'Vous → Client',
                             value: _formatDistance(distanceClient),
                             color: Colors.blue,
                             icon: Icons.person,
@@ -383,13 +476,13 @@ class _HomeLivreurState extends State<HomeLivreur> {
 
                     Gap(2.h),
 
-                    // ============ BOUTON LIVRÉ ============
+                    // ── Bouton livré ──
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 6.w),
                       child: SizedBox(
                         width: double.infinity,
                         child: ElevatedButton(
-                          onPressed: _delivered ? null : markAsDelivered,
+                          onPressed: _delivered ? null : _markAsDelivered,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.green,
                             disabledBackgroundColor:
@@ -412,8 +505,8 @@ class _HomeLivreurState extends State<HomeLivreur> {
                               Gap(2.w),
                               Text(
                                 _delivered
-                                    ? "Déjà livré"
-                                    : "Marquer comme Livré",
+                                    ? 'Déjà livré'
+                                    : 'Marquer comme Livré',
                                 style: GoogleFonts.poppins(
                                   fontSize: 14.sp,
                                   fontWeight: FontWeight.bold,
@@ -433,7 +526,6 @@ class _HomeLivreurState extends State<HomeLivreur> {
         ],
       ),
 
-      // ✅ FAB pour recentrer sur le livreur
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           if (livreurPos != null) {
@@ -446,19 +538,14 @@ class _HomeLivreurState extends State<HomeLivreur> {
     );
   }
 
-  // ======================== HELPERS ========================
-
-  /// Formate la distance : affiche en km si > 1000m
+  // ── Helpers ──
   String _formatDistance(double meters) {
-    if (meters >= 1000) {
-      return "${(meters / 1000).toStringAsFixed(1)} km";
-    }
-    return "${meters.toStringAsFixed(0)} m";
+    if (meters >= 1000) return '${(meters / 1000).toStringAsFixed(1)} km';
+    return '${meters.toStringAsFixed(0)} m';
   }
 
-  // ======================== WIDGETS ========================
-
-  Marker _customMarker(LatLng pos, String label, Color color, IconData icon) {
+  Marker _customMarker(
+      LatLng pos, String label, Color color, IconData icon) {
     return Marker(
       point: pos,
       width: 70,
@@ -482,7 +569,8 @@ class _HomeLivreurState extends State<HomeLivreur> {
           ),
           Container(
             margin: const EdgeInsets.only(top: 2),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(8),
@@ -517,10 +605,7 @@ class _HomeLivreurState extends State<HomeLivreur> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: const [
           BoxShadow(
-            color: Colors.black12,
-            blurRadius: 6,
-            offset: Offset(0, 4),
-          ),
+              color: Colors.black12, blurRadius: 6, offset: Offset(0, 4)),
         ],
       ),
       child: Row(
