@@ -5,57 +5,65 @@ import 'package:deligood/core/session/session_manager.dart';
 class LivreurApi {
   static const String baseUrl = 'https://deligood-backend.onrender.com';
 
-  // ================= TOKEN =================
-  static String? getToken() {
-    return SessionManager().token;
+  static String? getToken() => SessionManager().token;
+
+  static Map<String, String> _headers() => {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    if (getToken()?.isNotEmpty ?? false) 'Authorization': 'Token ${getToken()}',
+  };
+
+  static Future<http.Response> _get(String endpoint) async {
+    final url = Uri.parse('$baseUrl$endpoint');
+    return await http.get(url, headers: _headers());
   }
 
-  static Map<String, String> _headers() {
-    final token = getToken();
-
-    return {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      if (token != null && token.isNotEmpty) 'Authorization': 'Token $token',
-    };
+  static Future<http.Response> _post(String endpoint) async {
+    final url = Uri.parse('$baseUrl$endpoint');
+    return await http.post(url, headers: _headers());
   }
 
-  // ================= COURSES DISPONIBLES =================
+  static dynamic _handleResponse(http.Response response) {
+    final statusCode = response.statusCode;
+    final body = response.body;
+
+    if (statusCode >= 200 && statusCode < 300) {
+      return body.isEmpty ? null : jsonDecode(body);
+    }
+
+    final errorData = body.isNotEmpty ? jsonDecode(body) : {};
+    final errorMessage = errorData['detail'] ?? errorData['message'] ?? body;
+
+    throw Exception('[$statusCode] $errorMessage');
+  }
+
   static Future<List<dynamic>> fetchCoursesDisponibles() async {
-    final url = Uri.parse('$baseUrl/api/orders/orders/livreur/available/');
+    final response = await _get('/api/orders/orders/livreur/available/');
+    final data = _handleResponse(response);
 
-    final res = await http.get(url, headers: _headers());
-
-    if (res.statusCode == 200) {
-      return jsonDecode(res.body);
-    } else {
-      throw Exception('Erreur fetch courses: ${res.body}');
+    if (data is! List) {
+      throw Exception('Format de réponse invalide pour les courses disponibles');
     }
+
+    return data;
   }
 
-  // ================= PICKUP COURSE =================
   static Future<void> pickupCourse(int orderId) async {
-    final url = Uri.parse(
-      '$baseUrl/api/orders/orders/livreur/$orderId/pickup/',
-    );
-
-    final res = await http.post(url, headers: _headers());
-
-    if (res.statusCode != 200 && res.statusCode != 201) {
-      throw Exception('Erreur pickup course: ${res.body}');
-    }
+    final response = await _post('/api/orders/orders/livreur/$orderId/pickup/');
+    _handleResponse(response);
   }
 
-  // ================= DELIVER COURSE =================
   static Future<void> markOrderAsDelivered(int orderId) async {
-    final url = Uri.parse(
-      '$baseUrl/api/orders/orders/livreur/$orderId/deliver/',
-    );
+    final response = await _post('/api/orders/orders/livreur/$orderId/deliver/');
+    _handleResponse(response);
+  }
 
-    final res = await http.post(url, headers: _headers());
-
-    if (res.statusCode != 200 && res.statusCode != 201) {
-      throw Exception('Erreur livraison: ${res.body}');
+  static Future<void> checkTokenValidity() async {
+    try {
+      await _get('/api/auth/verify-token/');
+    } catch (e) {
+      SessionManager().clearSession();
+      throw Exception('Session expirée');
     }
   }
 }

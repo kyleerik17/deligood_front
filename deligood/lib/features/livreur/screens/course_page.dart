@@ -120,6 +120,14 @@ class _CoursePageState extends State<CoursePage>
     }
     await _loadActiveCourse();
     await _fetchCourses();
+    if (_activeCourse != null) {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => HomeLivreur(course: _activeCourse),
+    ),
+  );
+}
   }
 
   Future<void> _loadActiveCourse() async {
@@ -156,61 +164,79 @@ class _CoursePageState extends State<CoursePage>
     }
   }
 
-  Future<void> _saveCourse(CourseModel course) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('active_course', jsonEncode(course.toJson()));
-  }
+Future<void> _saveCourse(CourseModel course) async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('active_course', jsonEncode(course.toJson()));
+}
 
   Future<void> _takeCourse(CourseModel course) async {
-    if (_isTaking) return;
+  if (_isTaking) return;
 
-    if (_activeCourse != null) {
-      _showSnackBar('Vous avez déjà une course en cours !', isError: true);
-      return;
-    }
+  if (_activeCourse != null) {
+    _showSnackBar('Vous avez déjà une course en cours !', isError: true);
+    return;
+  }
 
-    setState(() => _isTaking = true);
+  setState(() => _isTaking = true);
 
-    try {
-      await LivreurApi.pickupCourse(course.id);
-      if (!mounted) return;
+  try {
+    await LivreurApi.pickupCourse(course.id);
+    if (!mounted) return;
 
-      await _saveCourse(course);
-      setState(() { _isTaking = false; _activeCourse = course; });
+    // ✅ SAVE LOCAL STORAGE PROPREMENT
+    await _saveCourse(course);
+
+    setState(() {
+      _isTaking = false;
+      _activeCourse = course;
+    });
+
+    await _fetchCourses();
+
+    _showSnackBar('Course prise avec succès !', isError: false);
+
+    await Future.delayed(const Duration(milliseconds: 800));
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => HomeLivreur(course: course),
+        transitionsBuilder: (_, animation, __, child) {
+          final tween = Tween(
+            begin: const Offset(1, 0),
+            end: Offset.zero,
+          ).chain(CurveTween(curve: Curves.easeInOut));
+
+          return SlideTransition(
+            position: animation.drive(tween),
+            child: child,
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 600),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+
+    setState(() => _isTaking = false);
+
+    final msg = e.toString();
+
+    _showSnackBar(
+      msg.contains('400')
+          ? 'Cette course a déjà été prise par un autre livreur.'
+          : msg.contains('timeout') || msg.contains('SocketException')
+              ? 'Pas de connexion réseau.'
+              : 'Impossible de prendre la course.',
+      isError: true,
+    );
+
+    if (msg.contains('400')) {
       await _fetchCourses();
-
-      _showSnackBar('Course prise avec succès !', isError: false);
-      await Future.delayed(const Duration(milliseconds: 900));
-      if (!mounted) return;
-
-      Navigator.push(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => HomeLivreur(course: course),
-          transitionsBuilder: (_, animation, __, child) {
-            final tween = Tween(begin: const Offset(1, 0), end: Offset.zero)
-                .chain(CurveTween(curve: Curves.easeInOut));
-            return SlideTransition(
-                position: animation.drive(tween), child: child);
-          },
-          transitionDuration: const Duration(milliseconds: 600),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isTaking = false);
-      final msg = e.toString();
-      _showSnackBar(
-        msg.contains('400')
-            ? 'Cette course a déjà été prise par un autre livreur.'
-            : msg.contains('timeout') || msg.contains('SocketException')
-                ? 'Pas de connexion réseau.'
-                : 'Impossible de prendre la course.',
-        isError: true,
-      );
-      if (msg.contains('400')) await _fetchCourses();
     }
   }
+}
 
   void _showSnackBar(String message, {required bool isError}) {
     ScaffoldMessenger.of(context).showSnackBar(

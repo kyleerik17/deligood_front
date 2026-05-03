@@ -50,28 +50,28 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
     await fetchMenus();
   }
 
- Future<void> fetchMenus() async {
-  final id = widget.restaurant['id'];
-  final url =
-      "https://deligood-backend.onrender.com/api/menu/items/?restaurant_id=$id";
+  Future<void> fetchMenus() async {
+    final id = widget.restaurant['id'];
+    final url =
+        "https://deligood-backend.onrender.com/api/menu/items/?restaurant_id=$id";
 
-  debugPrint("🍔 Fetching menus for restaurant ID: $id");
-  debugPrint("🌐 URL: $url");
+    debugPrint("🍔 Fetching menus for restaurant ID: $id");
+    debugPrint("🌐 URL: $url");
 
-  final res = await http.get(Uri.parse(url));
+    final res = await http.get(Uri.parse(url));
 
-  debugPrint("📦 Status: ${res.statusCode}");
-  debugPrint("📦 Body: ${res.body}");
+    debugPrint("📦 Status: ${res.statusCode}");
+    debugPrint("📦 Body: ${res.body}");
 
-  if (res.statusCode == 200) {
-    final data = jsonDecode(res.body);
-    menus = data is List ? data : data['results'] ?? [];
-    debugPrint("✅ Menus count: ${menus.length}");
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      menus = data is List ? data : data['results'] ?? [];
+      debugPrint("✅ Menus count: ${menus.length}");
+    }
+
+    setState(() => loading = false);
+    _anim.forward();
   }
-
-  setState(() => loading = false);
-  _anim.forward();
-}
 
   void addToCart(Map item) {
     setState(() => cart.add(item));
@@ -91,34 +91,57 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
   }
 
   Future<void> sendCart() async {
-  debugPrint("🛒 SEND CART PRESSED");
-  debugPrint("🔑 TOKEN => $token");
-  debugPrint("📦 CART => ${cart.length} articles");
+    debugPrint("🛒 SEND CART PRESSED");
+    debugPrint("🔑 TOKEN => $token");
+    debugPrint("📦 CART => ${cart.length} articles");
 
-  if (token == null) {
-    debugPrint("❌ TOKEN NULL — abandon");
-    return;
-  }
+    if (token == null) {
+      debugPrint("❌ TOKEN NULL — abandon");
+      return;
+    }
 
-  final url = "https://deligood-backend.onrender.com/api/orders/cart/add/";
+    final url = "https://deligood-backend.onrender.com/api/orders/cart/add/";
+    bool success = true;
 
-  for (var item in cart) {
-    debugPrint("➡️ Envoi item => ${item['id']} | ${item['name']}");
+    for (var item in cart) {
+      debugPrint("➡️ Envoi item => ${item['id']} | ${item['name']}");
 
-    final res = await http.post(
-      Uri.parse(url),
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Token $token",
-      },
-      body: jsonEncode({"menu_id": item['id'], "quantity": 1}),
+      final res = await http.post(
+        Uri.parse(url),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Token $token",
+        },
+        body: jsonEncode({
+          "menu_item_id": item['id'], // ✅ corrigé
+          "quantity": 1,
+        }),
+      );
+
+      debugPrint("📬 STATUS => ${res.statusCode}");
+      debugPrint("📬 BODY => ${res.body}");
+
+      if (res.statusCode != 200) {
+        success = false;
+      }
+    }
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success ? "Commande envoyée ✅" : "Erreur lors de l'envoi ❌",
+        ),
+        backgroundColor: success ? Colors.green : Colors.red,
+      ),
     );
 
-    debugPrint("📬 STATUS => ${res.statusCode}");
-    debugPrint("📬 BODY => ${res.body}");
+    if (success) {
+      setState(() => cart.clear());
+    }
   }
-  debugPrint("✅ SEND CART DONE");
-}
+
   @override
   Widget build(BuildContext context) {
     final name =
@@ -273,30 +296,30 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
       child: Row(
         children: [
           // 🖼 IMAGE
-         ClipRRect(
-  borderRadius: const BorderRadius.horizontal(
-    left: Radius.circular(18),
-  ),
-  child: m['image'] != null && m['image'].toString().isNotEmpty
-      ? Image.network(
-          m['image'].toString(),
-          width: 22.w,
-          height: 10.h,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => Image.asset(
-            'assets/images/n.png',
-            width: 22.w,
-            height: 10.h,
-            fit: BoxFit.cover,
+          ClipRRect(
+            borderRadius: const BorderRadius.horizontal(
+              left: Radius.circular(18),
+            ),
+            child: m['image'] != null && m['image'].toString().isNotEmpty
+                ? Image.network(
+                    m['image'].toString(),
+                    width: 22.w,
+                    height: 10.h,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Image.asset(
+                      'assets/images/n.png',
+                      width: 22.w,
+                      height: 10.h,
+                      fit: BoxFit.cover,
+                    ),
+                  )
+                : Image.asset(
+                    'assets/images/n.png',
+                    width: 22.w,
+                    height: 10.h,
+                    fit: BoxFit.cover,
+                  ),
           ),
-        )
-      : Image.asset(
-          'assets/images/n.png',
-          width: 22.w,
-          height: 10.h,
-          fit: BoxFit.cover,
-        ),
-),
 
           // 📄 INFOS
           Expanded(

@@ -48,39 +48,47 @@ class _HomeLivreurState extends State<HomeLivreur> {
   }
 
   Future<void> _loadCourse() async {
-    CourseModel? course = widget.course;
+  CourseModel? course = widget.course;
 
-    if (course == null) {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString('active_course');
-      if (saved != null) {
-        course = CourseModel.fromJson(jsonDecode(saved));
-      }
-    }
+  final prefs = await SharedPreferences.getInstance();
 
-    if (!mounted) return;
-
-    if (course != null) {
-      setState(() {
-        restaurantPos = course!.restaurantPos;
-        clientPos = course.customerPos;
-        orderId = course.id;
-        livreurPos = LatLng(
-          restaurantPos!.latitude - 0.0007,
-          restaurantPos!.longitude - 0.0007,
-        );
-        _loading = false;
-      });
-
-      timer = Timer.periodic(
-        const Duration(seconds: 2),
-        (_) => moveLivreur(),
-      );
-    } else {
-      setState(() => _loading = false);
+  // 1️⃣ priorité widget (navigation directe)
+  if (course != null) {
+    await prefs.setString(
+      'active_course',
+      jsonEncode(course.toJson()),
+    );
+  } 
+  // 2️⃣ sinon fallback stockage local
+  else {
+    final saved = prefs.getString('active_course');
+    if (saved != null) {
+      course = CourseModel.fromJson(jsonDecode(saved));
     }
   }
 
+  if (!mounted) return;
+
+  if (course != null) {
+    setState(() {
+      restaurantPos = course!.restaurantPos;
+      clientPos = course.customerPos;
+      orderId = course.id;
+      livreurPos = LatLng(
+        restaurantPos!.latitude - 0.0007,
+        restaurantPos!.longitude - 0.0007,
+      );
+      _loading = false;
+    });
+
+    timer = Timer.periodic(
+      const Duration(seconds: 2),
+      (_) => moveLivreur(),
+    );
+  } else {
+    setState(() => _loading = false);
+  }
+}
   @override
   void dispose() {
     timer?.cancel();

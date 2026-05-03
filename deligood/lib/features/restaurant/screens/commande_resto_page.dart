@@ -75,18 +75,31 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
       'Authorization': isJwt ? 'Bearer $token' : 'Token $token',
     };
 
+    debugPrint('🌐 GET /api/orders/orders/restaurant/');
+    debugPrint('🔑 Token type : ${isJwt ? "JWT Bearer" : "Token"}');
+
     final response = await http.get(
       Uri.parse('$_baseUrl/api/orders/orders/restaurant/'),
       headers: headers,
     );
 
+    debugPrint('📡 Status code : ${response.statusCode}');
+
     if (response.statusCode == 200) {
       final List data = jsonDecode(response.body);
-      return data.map((e) => CommandeResto.fromJson(e)).toList();
+      debugPrint('📦 ${data.length} commande(s) reçue(s)');
+      debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
+      return data
+          .map((e) => CommandeResto.fromJson(e as Map<String, dynamic>))
+          .toList();
     } else if (response.statusCode == 401) {
+      debugPrint('🚫 Token expiré — suppression locale');
       await prefs.remove('access_token');
       throw Exception('Session expirée. Veuillez vous reconnecter.');
     } else {
+      debugPrint('❌ Erreur serveur : ${response.statusCode}');
+      debugPrint('❌ Body : ${response.body}');
       throw Exception('Erreur serveur : ${response.statusCode}');
     }
   }
@@ -104,6 +117,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
       });
       _fadeController.forward(from: 0);
     } catch (e) {
+      debugPrint('💥 fetchCommandes error : $e');
       setState(() {
         errorMessage = e.toString();
         isLoading = false;
@@ -117,6 +131,12 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
       case 'en attente':
       case 'pending':
         return Colors.orange;
+      case 'en préparation':
+      case 'preparing':
+        return kTeal;
+      case 'prête':
+      case 'ready':
+        return Colors.blue;
       case 'livrée':
       case 'delivered':
         return kSuccess;
@@ -133,6 +153,12 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
       case 'en attente':
       case 'pending':
         return Icons.hourglass_empty_rounded;
+      case 'en préparation':
+      case 'preparing':
+        return Icons.restaurant_rounded;
+      case 'prête':
+      case 'ready':
+        return Icons.done_all_rounded;
       case 'livrée':
       case 'delivered':
         return Icons.check_circle_rounded;
@@ -141,6 +167,23 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
         return Icons.cancel_rounded;
       default:
         return Icons.info_outline_rounded;
+    }
+  }
+
+  String _statusLabel(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return 'En attente';
+      case 'preparing':
+        return 'En préparation';
+      case 'ready':
+        return 'Prête';
+      case 'delivered':
+        return 'Livrée';
+      case 'cancelled':
+        return 'Annulée';
+      default:
+        return status;
     }
   }
 
@@ -389,9 +432,19 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
   Widget _buildCard(CommandeResto commande, int index) {
     final color = _statusColor(commande.status);
     final icon = _statusIcon(commande.status);
+    final label = _statusLabel(commande.status);
     final initial = commande.clientName.isNotEmpty
         ? commande.clientName[0].toUpperCase()
         : '?';
+
+    final totalDisplay = commande.total > 0
+        ? '${commande.total.toStringAsFixed(0)} FCFA'
+        : '— FCFA';
+
+    // Résumé "TCHEP ×2, Attiéké ×1"
+    final articlesResume = commande.items
+        .map((e) => '${e.name} ×${e.quantity}')
+        .join(', ');
 
     return TweenAnimationBuilder<double>(
       tween: Tween(begin: 0, end: 1),
@@ -427,11 +480,11 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
           child: Padding(
             padding: EdgeInsets.all(4.w),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // ── Header : avatar + nom + chevron ──
                 Row(
                   children: [
-                    // Avatar initiale
                     Container(
                       width: 12.w,
                       height: 12.w,
@@ -457,7 +510,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
 
                     SizedBox(width: 3.w),
 
-                    // Nom + nb articles
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -472,17 +524,20 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                           ),
                           SizedBox(height: 0.3.h),
                           Text(
-                            '${commande.items.length} article${commande.items.length > 1 ? 's' : ''}',
+                            commande.items.isEmpty
+                                ? 'Aucun article'
+                                : articlesResume,
                             style: GoogleFonts.poppins(
-                              fontSize: 10.5.sp,
+                              fontSize: 10.sp,
                               color: kTextSecondary,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
                     ),
 
-                    // Chevron
                     Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
@@ -506,7 +561,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Badge statut avec icône
                     Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: 3.w,
@@ -526,7 +580,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                           Icon(icon, color: color, size: 13),
                           const SizedBox(width: 4),
                           Text(
-                            commande.status,
+                            label,
                             style: GoogleFonts.poppins(
                               fontSize: 10.sp,
                               fontWeight: FontWeight.w600,
@@ -537,7 +591,6 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                       ),
                     ),
 
-                    // Montant
                     Container(
                       padding: EdgeInsets.symmetric(
                         horizontal: 3.w,
@@ -548,7 +601,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        '${commande.total.toStringAsFixed(0)} FCFA',
+                        totalDisplay,
                         style: GoogleFonts.poppins(
                           fontSize: 12.sp,
                           fontWeight: FontWeight.w700,

@@ -2,6 +2,7 @@ import 'package:deligood/services/api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 // 🎨 DESIGN SYSTEM
 const kOrange = Color(0xFFFF6B35);
@@ -52,16 +53,15 @@ class _PanierPageState extends State<PanierPage>
     with SingleTickerProviderStateMixin {
   late Future<List<CartItem>> _futureCart;
   late AnimationController _anim;
+  bool _ordering = false;
 
   @override
   void initState() {
     super.initState();
-
     _anim = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 600),
     );
-
     _loadCart();
   }
 
@@ -70,12 +70,50 @@ class _PanierPageState extends State<PanierPage>
       _anim.forward(from: 0);
       return data.map((e) => CartItem.fromJson(e)).toList();
     });
-
     setState(() {});
   }
 
   double _total(List<CartItem> items) =>
       items.fold(0, (sum, i) => sum + i.subtotal);
+
+  Future<void> _commander() async {
+    setState(() => _ordering = true);
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final firstName = prefs.getString('first_name') ?? '';
+      final lastName = prefs.getString('last_name') ?? '';
+      final phone = prefs.getString('phone_number') ?? '';
+      final locality = prefs.getString('locality') ?? 'Grand-Bassam';
+
+      debugPrint("🛒 COMMANDER => $firstName $lastName | $phone | $locality");
+
+      await PanierApi.confirmOrder(
+        firstName: firstName,
+        lastName: lastName,
+        phoneNumber: phone,
+        locality: locality,
+      );
+
+      _show("Commande passée avec succès ✅");
+      _loadCart();
+    } catch (e) {
+      debugPrint("❌ COMMANDER ERROR => $e");
+      _show(e.toString().replaceAll('Exception: ', ''), error: true);
+    } finally {
+      setState(() => _ordering = false);
+    }
+  }
+
+  void _show(String msg, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? Colors.red : Colors.green,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -85,7 +123,6 @@ class _PanierPageState extends State<PanierPage>
         child: Column(
           children: [
             _header(),
-
             Expanded(
               child: FutureBuilder<List<CartItem>>(
                 future: _futureCart,
@@ -98,9 +135,7 @@ class _PanierPageState extends State<PanierPage>
 
                   final items = snap.data!;
 
-                  if (items.isEmpty) {
-                    return _empty();
-                  }
+                  if (items.isEmpty) return _empty();
 
                   return Column(
                     children: [
@@ -124,9 +159,7 @@ class _PanierPageState extends State<PanierPage>
       child: Row(
         children: [
           _circle(Icons.arrow_back_ios_new, () => Navigator.pop(context)),
-
           const Spacer(),
-
           Column(
             children: [
               Text(
@@ -146,9 +179,7 @@ class _PanierPageState extends State<PanierPage>
               ),
             ],
           ),
-
           const Spacer(),
-
           _circle(Icons.refresh_rounded, _loadCart),
         ],
       ),
@@ -162,7 +193,6 @@ class _PanierPageState extends State<PanierPage>
       itemCount: items.length,
       itemBuilder: (_, i) {
         final item = items[i];
-
         return FadeTransition(
           opacity: Tween(begin: 0.0, end: 1.0).animate(
             CurvedAnimation(
@@ -197,9 +227,7 @@ class _PanierPageState extends State<PanierPage>
                         : const Icon(Icons.fastfood),
                   ),
                 ),
-
                 SizedBox(width: 3.w),
-
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -219,7 +247,6 @@ class _PanierPageState extends State<PanierPage>
                     ],
                   ),
                 ),
-
                 Text(
                   "${item.quantity}x",
                   style: GoogleFonts.poppins(
@@ -247,8 +274,11 @@ class _PanierPageState extends State<PanierPage>
               color: kOrange.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.shopping_cart_outlined,
-                size: 50, color: kOrange),
+            child: const Icon(
+              Icons.shopping_cart_outlined,
+              size: 50,
+              color: kOrange,
+            ),
           ),
           SizedBox(height: 2.h),
           Text(
@@ -283,9 +313,7 @@ class _PanierPageState extends State<PanierPage>
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text("Total",
-                  style: GoogleFonts.poppins(color: kTextSecondary)),
-
+              Text("Total", style: GoogleFonts.poppins(color: kTextSecondary)),
               Text(
                 "${total.toStringAsFixed(0)} FCFA",
                 style: GoogleFonts.playfairDisplay(
@@ -296,27 +324,28 @@ class _PanierPageState extends State<PanierPage>
               ),
             ],
           ),
-
           SizedBox(height: 2.h),
-
           SizedBox(
             width: double.infinity,
             height: 6.h,
             child: ElevatedButton(
-              onPressed: () {},
+              onPressed: _ordering ? null : _commander, // ✅ connecté
               style: ElevatedButton.styleFrom(
                 backgroundColor: kOrange,
+                disabledBackgroundColor: kOrange.withOpacity(0.5),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
               ),
-              child: Text(
-                "Commander",
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                ),
-              ),
+              child: _ordering
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : Text(
+                      "Commander",
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
             ),
           ),
         ],
@@ -333,9 +362,7 @@ class _PanierPageState extends State<PanierPage>
         decoration: const BoxDecoration(
           color: kWhite,
           shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(color: Colors.black12, blurRadius: 10),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 10)],
         ),
         child: Icon(icon, size: 18, color: kTextPrimary),
       ),

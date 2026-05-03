@@ -36,7 +36,7 @@ void main() async {
   await Future.wait([
     session.loadSession(),
     AuthState.instance.loadFromPrefs(),
-  ]);// ✅ Recharge le token
+  ]); // ✅ Recharge le token
   runApp(const MyApp());
 }
 
@@ -75,26 +75,28 @@ class _AuthWrapperState extends State<AuthWrapper> {
     _init();
   }
 
- Future<void> _init() async {
-  final prefs = await SharedPreferences.getInstance();
+  Future<void> _init() async {
+    final prefs = await SharedPreferences.getInstance();
 
-  final token = prefs.getString('access_token');
-  final type = prefs.getString('user_type');
-  final storedOrderId = prefs.getInt('order_id') ?? 0;
+    final token = prefs.getString('access_token');
+    final type = prefs.getString('user_type');
+    final storedOrderId = prefs.getInt('order_id') ?? 0;
 
-  debugPrint('TOKEN: $token');
-  debugPrint('USER TYPE: $type');
+    debugPrint('TOKEN: $token');
+    debugPrint('USER TYPE: $type');
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  setState(() {
-    orderId = storedOrderId;
-    userRole = (token != null && token.isNotEmpty && type != null && type.isNotEmpty)
-        ? type.toLowerCase().trim()
-        : null;
-    isLoading = false;
-  });
-}
+    setState(() {
+      orderId = storedOrderId;
+      userRole =
+          (token != null && token.isNotEmpty && type != null && type.isNotEmpty)
+          ? type.toLowerCase().trim()
+          : null;
+      isLoading = false;
+    });
+  }
+
   // 🔥 APPELÉ APRÈS LOGIN — extrait le rôle directement du token reçu
   Future<void> onLoginSuccess(String type) async {
     final prefs = await SharedPreferences.getInstance();
@@ -126,21 +128,13 @@ class _AuthWrapperState extends State<AuthWrapper> {
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     final loggedIn = userRole != null;
 
     return loggedIn
-        ? CustomBottomNavBar(
-            userRole: userRole!,
-            orderId: orderId,
-          )
-        : LoginScreen(
-            orderId: orderId,
-            onLoginSuccess: onLoginSuccess,
-          );
+        ? CustomBottomNavBar(userRole: userRole!, orderId: orderId)
+        : LoginScreen(orderId: orderId, onLoginSuccess: onLoginSuccess);
   }
 }
