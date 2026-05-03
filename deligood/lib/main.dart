@@ -1,6 +1,7 @@
 import 'package:deligood/core/session/session_manager.dart';
 import 'package:deligood/features/auth/auth_state.dart';
 import 'package:deligood/features/auth/screens/login/login_page.dart';
+import 'package:deligood/features/client/screens/splash_screen.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
@@ -46,7 +47,7 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'DeliGood',
-          home: const AuthWrapper(),
+          home: const SplashScreen(orderId: 0,),
         );
       },
     );
