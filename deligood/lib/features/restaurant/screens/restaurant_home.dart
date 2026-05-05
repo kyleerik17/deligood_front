@@ -476,7 +476,7 @@ class _HomeRestaurantState extends State<HomeRestaurant>
     if (widget.orderId <= 0) {
       return Scaffold(
         backgroundColor: kBg,
-        bottomNavigationBar: _buildNavBar(),
+        
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -500,7 +500,7 @@ class _HomeRestaurantState extends State<HomeRestaurant>
     if (_isLoading) {
       return Scaffold(
         backgroundColor: kBg,
-        bottomNavigationBar: _buildNavBar(),
+       
         body: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -520,7 +520,7 @@ class _HomeRestaurantState extends State<HomeRestaurant>
     final center = _restaurantPos ?? const LatLng(5.3540, -4.0010);
 
     return Scaffold(
-      bottomNavigationBar: _buildNavBar(),
+      
       body: Stack(
         children: [
           _buildMap(center),
@@ -578,57 +578,7 @@ class _HomeRestaurantState extends State<HomeRestaurant>
   // ────────────────────────────────────────────
   // NAVBAR
   // ────────────────────────────────────────────
-  Widget _buildNavBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: kWhite,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        child: BottomNavigationBar(
-          currentIndex: _navIndex,
-          onTap: (i) => setState(() => _navIndex = i),
-          backgroundColor: kWhite,
-          selectedItemColor: kOrange,
-          unselectedItemColor: kSubText,
-          selectedLabelStyle: GoogleFonts.poppins(
-            fontSize: 10.sp,
-            fontWeight: FontWeight.w600,
-          ),
-          unselectedLabelStyle: GoogleFonts.poppins(fontSize: 10.sp),
-          type: BottomNavigationBarType.fixed,
-          elevation: 0,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.map_rounded),
-              label: 'Suivi',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.receipt_long_rounded),
-              label: 'Commandes',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.bar_chart_rounded),
-              label: 'Stats',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_rounded),
-              label: 'Profil',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
+  
   // ────────────────────────────────────────────
   // CARTE STATUT
   // ────────────────────────────────────────────

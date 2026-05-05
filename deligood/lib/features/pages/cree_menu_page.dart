@@ -1,5 +1,7 @@
 import 'package:deligood/core/api/menu_service.dart';
 import 'package:deligood/features/auth/auth_state.dart';
+import 'package:deligood/features/restaurant/screens/commande_resto_page.dart';
+import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -199,7 +201,21 @@ class _CreateMenuPageState extends State<CreateMenuPage> {
           selectedCategory = null;
         });
 
-        Navigator.pop(context, true);
+        Navigator.of(context).pushAndRemoveUntil(
+  PageRouteBuilder(
+    transitionDuration: const Duration(milliseconds: 400),
+    pageBuilder: (context, animation, secondaryAnimation) {
+      return CommandeRestoPage();
+    },
+    transitionsBuilder: (context, animation, secondaryAnimation, child) {
+      return FadeTransition(
+        opacity: animation,
+        child: child,
+      );
+    },
+  ),
+  (route) => false,
+);
       } else {
         _show(result['message'] ?? "Erreur lors de la création", true);
       }

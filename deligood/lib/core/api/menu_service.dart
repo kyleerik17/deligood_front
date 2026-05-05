@@ -11,10 +11,15 @@ class MenuService {
   // ─────────────────────────────────────────────
   // HELPER : force HTTPS sur toutes les URLs
   // ─────────────────────────────────────────────
-  static String fixImageUrl(String? url) {
-    if (url == null || url.trim().isEmpty) return '';
-    return url.trim().replaceFirst('http://', 'https://');
-  }
+static String fixImageUrl(String? url) {
+  if (url == null || url.isEmpty) return '';
+
+  if (url.startsWith('http')) return url;
+
+  if (url.contains('cloudinary')) return 'https://$url';
+
+  return url;
+}
 
   // ─────────────────────────────────────────────
   // CRÉER UN MENU ITEM (multipart → backend Django)
@@ -166,6 +171,7 @@ class MenuService {
   // RÉCUPÉRER LES ITEMS D'UN RESTAURANT
   // ─────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> getMenuItems(
+    
       int restaurantId) async {
     try {
       final res = await http
@@ -185,7 +191,9 @@ class MenuService {
             'description': e['description'] ?? '',
             'price': _parsePrice(e['price']),
             // ✅ Force HTTPS pour toutes les images Cloudinary
-            'image': fixImageUrl(e['image']?.toString()),
+            'image': fixImageUrl(e['image']?.toString()) == ''
+    ? 'https://via.placeholder.com/300'
+    : fixImageUrl(e['image']?.toString()),
             'category': e['category'],
             'is_available': e['is_available'] ?? true,
           };
@@ -194,7 +202,10 @@ class MenuService {
     } catch (e) {
       debugPrint('❌ getMenuItems error => $e');
     }
+    
     return [];
+
+    
   }
 
   // ─────────────────────────────────────────────
