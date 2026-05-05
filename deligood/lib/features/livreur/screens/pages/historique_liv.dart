@@ -1,9 +1,19 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:sizer/sizer.dart';
+import 'package:gap/gap.dart';
+
+// 🎨 Thème DeliGood
+const kOrange       = Color(0xFFFF6B35);
+const kBg           = Color(0xFFF7F3EF);
+const kWhite        = Colors.white;
+const kTextPrimary  = Color(0xFF1A1A1A);
+const kTextSecondary = Color(0xFF9E9E9E);
+const kGreen        = Color(0xFF27AE60);
 
 /// ====================== MODEL ======================
 
@@ -52,7 +62,7 @@ class OrderModel {
   }
 }
 
-/// ====================== SERVICE API ======================
+/// ====================== SERVICE ======================
 
 class OrderService {
   static Future<List<OrderModel>> fetchDeliveredOrders() async {
@@ -64,9 +74,7 @@ class OrderService {
     }
 
     final response = await http.get(
-      Uri.parse(
-        'https://deligood-backend.onrender.com/api/orders/orders/livreur/delivered/',
-      ),
+      Uri.parse('https://deligood-backend.onrender.com/api/orders/livreur/delivered/'),
       headers: {
         'Authorization': 'Token $token',
         'Content-Type': 'application/json',
@@ -77,7 +85,7 @@ class OrderService {
       final List data = jsonDecode(response.body);
       return data.map((e) => OrderModel.fromJson(e)).toList();
     } else {
-      throw Exception('Erreur API ${response.statusCode} : ${response.body}');
+      throw Exception('Erreur API ${response.statusCode}');
     }
   }
 }
@@ -91,174 +99,155 @@ class HistoryLivPage extends StatefulWidget {
   State<HistoryLivPage> createState() => _HistoryLivPageState();
 }
 
-class _HistoryLivPageState extends State<HistoryLivPage> {
+class _HistoryLivPageState extends State<HistoryLivPage>
+    with SingleTickerProviderStateMixin {
   late Future<List<OrderModel>> futureOrders;
+  late AnimationController _anim;
 
   @override
   void initState() {
     super.initState();
-    futureOrders = OrderService.fetchDeliveredOrders();
+    _anim = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+    futureOrders = OrderService.fetchDeliveredOrders()
+      ..then((_) => _anim.forward());
+  }
+
+  @override
+  void dispose() {
+    _anim.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7F9),
-      appBar: AppBar(
-        title: const Text(
-          'Historique',
-          style: TextStyle(fontWeight: FontWeight.w600),
-        ),
-        centerTitle: true,
-        backgroundColor: Colors.deepOrange,
-      ),
-      body: FutureBuilder<List<OrderModel>>(
-        future: futureOrders,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
 
-          if (snapshot.hasError) {
-            return Center(child: Text('Erreur : ${snapshot.error}'));
-          }
-
-          final orders = snapshot.data!;
-          if (orders.isEmpty) {
-            return const Center(child: Text('Aucune commande livrée'));
-          }
-
-          return ListView.separated(
-            padding: const EdgeInsets.all(16),
-            itemCount: orders.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 14),
-            itemBuilder: (context, index) {
-              final order = orders[index];
-
-              return GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => OrderDetailPage(order: order),
+            // 🔝 Header
+            Padding(
+              padding: EdgeInsets.fromLTRB(5.w, 3.h, 5.w, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Historique",
+                    style: GoogleFonts.syne(
+                      fontSize: 22.sp,
+                      fontWeight: FontWeight.w800,
+                      color: kTextPrimary,
+                      letterSpacing: -0.3,
                     ),
+                  ),
+                  Gap(0.5.h),
+                  Text(
+                    "Toutes vos livraisons effectuées",
+                    style: GoogleFonts.syne(
+                      fontSize: 11.sp,
+                      color: kTextSecondary,
+                    ),
+                  ),
+                  Gap(2.h),
+                  // Ligne déco orange
+                  Container(
+                    width: 10.w,
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: kOrange,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            Gap(2.h),
+
+            // 📋 Liste
+            Expanded(
+              child: FutureBuilder<List<OrderModel>>(
+                future: futureOrders,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: kOrange),
+                    );
+                  }
+
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.wifi_off_rounded,
+                              size: 48, color: Colors.grey.shade300),
+                          Gap(2.h),
+                          Text(
+                            "Erreur de chargement",
+                            style: GoogleFonts.syne(color: kTextSecondary),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  final orders = snapshot.data!;
+
+                  if (orders.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.history_rounded,
+                              size: 52, color: Colors.grey.shade300),
+                          Gap(2.h),
+                          Text(
+                            "Aucune livraison effectuée",
+                            style: GoogleFonts.syne(color: kTextSecondary),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return ListView.separated(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: 5.w, vertical: 1.h),
+                    itemCount: orders.length,
+                    separatorBuilder: (_, __) => Gap(1.5.h),
+                    itemBuilder: (context, index) {
+                      return FadeTransition(
+                        opacity: _anim,
+                        child: GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            PageRouteBuilder(
+                              pageBuilder: (_, __, ___) =>
+                                  OrderDetailPage(order: orders[index]),
+                              transitionsBuilder:
+                                  (_, animation, __, child) =>
+                                      FadeTransition(
+                                        opacity: animation,
+                                        child: child,
+                                      ),
+                              transitionDuration:
+                                  const Duration(milliseconds: 350),
+                            ),
+                          ),
+                          child: _OrderCard(order: orders[index]),
+                        ),
+                      );
+                    },
                   );
                 },
-                child: _OrderCard(order: order),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-/// ====================== CARD HISTORIQUE ======================
-
-class _OrderCard extends StatelessWidget {
-  final OrderModel order;
-
-  const _OrderCard({required this.order});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                height: 48,
-                width: 48,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE9F7EF),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: const Icon(Icons.check_circle, color: Color(0xFF27AE60)),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Commande #${order.id}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Client : ${order.clientName}',
-                      style: TextStyle(
-                        fontSize: 17.sp,
-                        color: Colors.grey.shade700,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      DateFormat('dd MMM yyyy – HH:mm').format(order.createdAt),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade500,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                '${order.total.toStringAsFixed(0)} FCFA',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// ====================== PAGE DÉTAIL COMMANDE ======================
-
-class OrderDetailPage extends StatelessWidget {
-  final OrderModel order;
-
-  const OrderDetailPage({super.key, required this.order});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF6F7F9),
-      appBar: AppBar(
-        title: Text('Commande #${order.id}'),
-        centerTitle: true,
-        backgroundColor: Colors.deepOrange,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _OrderInfo(order: order),
-            const SizedBox(height: 16),
-            Expanded(child: _OrderItems(items: order.items)),
+            ),
           ],
         ),
       ),
@@ -266,62 +255,94 @@ class OrderDetailPage extends StatelessWidget {
   }
 }
 
-/// ====================== INFO COMMANDE ======================
+/// ====================== CARD ======================
 
-class _OrderInfo extends StatelessWidget {
+class _OrderCard extends StatelessWidget {
   final OrderModel order;
-
-  const _OrderInfo({required this.order});
+  const _OrderCard({required this.order});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(4.w),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        color: kWhite,
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Statut',
-                style: TextStyle(fontWeight: FontWeight.w500),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF27AE60),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  order.status.toUpperCase(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
+          // Icône statut
+          Container(
+            width: 12.w,
+            height: 12.w,
+            decoration: BoxDecoration(
+              color: kGreen.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.check_circle_rounded,
+              color: kGreen,
+            ),
+          ),
+
+          SizedBox(width: 3.w),
+
+          // Infos
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "Commande #${order.id}",
+                  style: GoogleFonts.syne(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12.sp,
+                    color: kTextPrimary,
                   ),
                 ),
-              ),
-            ],
+                Gap(0.4.h),
+                Text(
+                  order.clientName,
+                  style: GoogleFonts.syne(
+                    fontSize: 10.sp,
+                    color: kTextSecondary,
+                  ),
+                ),
+                Gap(0.3.h),
+                Text(
+                  DateFormat('dd MMM yyyy · HH:mm').format(order.createdAt),
+                  style: GoogleFonts.syne(
+                    fontSize: 9.sp,
+                    color: kTextSecondary.withOpacity(0.7),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            'Client : ${order.clientName}',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 17.sp),
+
+          // Total + chevron
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                "${order.total.toStringAsFixed(0)} F",
+                style: GoogleFonts.syne(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.sp,
+                  color: kOrange,
+                ),
+              ),
+              Gap(0.5.h),
+              Icon(Icons.chevron_right_rounded,
+                  color: kTextSecondary.withOpacity(0.4), size: 18),
+            ],
           ),
         ],
       ),
@@ -329,47 +350,297 @@ class _OrderInfo extends StatelessWidget {
   }
 }
 
-/// ====================== LISTE ARTICLES ======================
+/// ====================== PAGE DÉTAIL ======================
 
-class _OrderItems extends StatelessWidget {
-  final List<OrderItem> items;
-
-  const _OrderItems({required this.items});
+class OrderDetailPage extends StatelessWidget {
+  final OrderModel order;
+  const OrderDetailPage({super.key, required this.order});
 
   @override
   Widget build(BuildContext context) {
-    if (items.isEmpty) {
-      return const Center(child: Text('Aucun article'));
-    }
+    final total = order.items.fold<double>(
+        0, (sum, i) => sum + (i.price * i.quantity));
 
-    return ListView.separated(
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final item = items[index];
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Column(
+          children: [
 
-        return Container(
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+            // Header
+            Padding(
+              padding: EdgeInsets.fromLTRB(5.w, 2.h, 5.w, 0),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: kWhite,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.06),
+                            blurRadius: 10,
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.arrow_back_ios_new_rounded,
+                          size: 16, color: kTextPrimary),
+                    ),
+                  ),
+                  SizedBox(width: 3.w),
+                  Text(
+                    "Commande #${order.id}",
+                    style: GoogleFonts.syne(
+                      fontSize: 16.sp,
+                      fontWeight: FontWeight.w800,
+                      color: kTextPrimary,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
+
+            Gap(3.h),
+
+            Expanded(
+              child: SingleChildScrollView(
+                padding: EdgeInsets.symmetric(horizontal: 5.w),
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+
+                    // 📋 Infos commande
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(4.w),
+                      decoration: BoxDecoration(
+                        color: kWhite,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.04),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                "Statut",
+                                style: GoogleFonts.syne(
+                                  fontWeight: FontWeight.w600,
+                                  color: kTextSecondary,
+                                  fontSize: 11.sp,
+                                ),
+                              ),
+                              Container(
+                                padding: EdgeInsets.symmetric(
+                                    horizontal: 3.w, vertical: 0.6.h),
+                                decoration: BoxDecoration(
+                                  color: kGreen.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  order.status.toUpperCase(),
+                                  style: GoogleFonts.syne(
+                                    color: kGreen,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 9.sp,
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          Gap(1.5.h),
+                          _infoRow(
+                            Icons.person_rounded,
+                            "Client",
+                            order.clientName,
+                          ),
+                          Gap(1.h),
+                          _infoRow(
+                            Icons.calendar_today_rounded,
+                            "Date",
+                            DateFormat('dd MMM yyyy · HH:mm')
+                                .format(order.createdAt),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    Gap(2.5.h),
+
+                    Text(
+                      "Articles commandés",
+                      style: GoogleFonts.syne(
+                        fontSize: 13.sp,
+                        fontWeight: FontWeight.w700,
+                        color: kTextPrimary,
+                      ),
+                    ),
+
+                    Gap(1.5.h),
+
+                    // 🍽 Articles
+                    ...order.items.map((item) => _ItemTile(item: item)),
+
+                    Gap(2.h),
+
+                    // 💰 Total
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.all(4.w),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [kOrange, Colors.deepOrangeAccent],
+                        ),
+                        borderRadius: BorderRadius.circular(18),
+                        boxShadow: [
+                          BoxShadow(
+                            color: kOrange.withOpacity(0.3),
+                            blurRadius: 16,
+                            offset: const Offset(0, 6),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            "Total",
+                            style: GoogleFonts.syne(
+                              color: kWhite,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13.sp,
+                            ),
+                          ),
+                          Text(
+                            "${total.toStringAsFixed(0)} FCFA",
+                            style: GoogleFonts.syne(
+                              color: kWhite,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16.sp,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    Gap(3.h),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String label, String value) {
+    return Row(
+      children: [
+        Icon(icon, color: kOrange, size: 16),
+        SizedBox(width: 2.w),
+        Text(
+          "$label : ",
+          style: GoogleFonts.syne(
+            color: kTextSecondary,
+            fontSize: 10.sp,
           ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('${item.quantity}x ${item.name}'),
-              Text('${item.price.toStringAsFixed(0)} FCFA'),
-            ],
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: GoogleFonts.syne(
+              color: kTextPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 10.sp,
+            ),
           ),
-        );
-      },
+        ),
+      ],
+    );
+  }
+}
+
+/// ====================== ITEM TILE ======================
+
+class _ItemTile extends StatelessWidget {
+  final OrderItem item;
+  const _ItemTile({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(bottom: 1.2.h),
+      padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 1.8.h),
+      decoration: BoxDecoration(
+        color: kWhite,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // Quantité badge
+          Container(
+            width: 8.w,
+            height: 8.w,
+            decoration: BoxDecoration(
+              color: kOrange.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Center(
+              child: Text(
+                "${item.quantity}x",
+                style: GoogleFonts.syne(
+                  color: kOrange,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 9.sp,
+                ),
+              ),
+            ),
+          ),
+
+          SizedBox(width: 3.w),
+
+          Expanded(
+            child: Text(
+              item.name,
+              style: GoogleFonts.syne(
+                fontWeight: FontWeight.w600,
+                fontSize: 11.sp,
+                color: kTextPrimary,
+              ),
+            ),
+          ),
+
+          Text(
+            "${item.price.toStringAsFixed(0)} F",
+            style: GoogleFonts.syne(
+              fontWeight: FontWeight.w700,
+              fontSize: 11.sp,
+              color: kOrange,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -63,43 +63,49 @@ class _RestaurantPageState extends State<RestaurantPage>
     super.dispose();
   }
 
-  void _filter() {
-    final query = _search.text.toLowerCase();
+ void _filter() {
+  final query = _search.text.toLowerCase();
 
-    setState(() {
-      filteredRestaurants = restaurants.where((r) {
-        final name = (r['first_name'] ?? '').toLowerCase();
-        final desc = (r['description'] ?? '').toLowerCase();
-        final cat = r['category'] ?? '';
+  setState(() {
+    filteredRestaurants = restaurants.where((r) {
+      final firstName = (r['first_name'] ?? '').toLowerCase();
+      final lastName = (r['last_name'] ?? '').toLowerCase();
+      final locality = (r['locality'] ?? '').toLowerCase();
 
-        return (name.contains(query) || desc.contains(query)) &&
-            (selectedCategory == 'Tous' || cat == selectedCategory);
-      }).toList();
-    });
-  }
+      final matchQuery = query.isEmpty ||
+          firstName.contains(query) ||
+          lastName.contains(query) ||
+          locality.contains(query);
 
-  Future<void> fetchRestaurants() async {
-    setState(() => isLoading = true);
+      // Pour les catégories, à adapter selon ce que ton API retourne
+      final matchCategory = selectedCategory == 'Tous';
 
-    try {
-      final res = await http.get(Uri.parse(baseUrl));
+      return matchQuery && matchCategory;
+    }).toList();
+  });
+}
 
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
+ Future<void> fetchRestaurants() async {
+  setState(() => isLoading = true);
 
-        setState(() {
-          restaurants = data;
-          filteredRestaurants = data;
-          isLoading = false;
-        });
+  try {
+    final res = await http.get(Uri.parse(baseUrl));
 
-        _anim.forward(from: 0);
-      }
-    } catch (_) {
-      setState(() => isLoading = false);
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+
+      setState(() {
+        restaurants = data;
+        isLoading = false;
+      });
+
+      _filter(); // 🔥 remplace filteredRestaurants = data
+      _anim.forward(from: 0);
     }
+  } catch (_) {
+    setState(() => isLoading = false);
   }
-
+}
   @override
   Widget build(BuildContext context) {
     return Scaffold(

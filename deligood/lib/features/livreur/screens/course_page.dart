@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:deligood/core/api/livreur_api.dart';
+import 'package:deligood/features/livreur/course_model.dart';
 import 'package:deligood/features/livreur/screens/pages/Home_livreur.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -19,55 +20,6 @@ const kSuccess       = Color(0xFF4CAF50);
 const kError         = Color(0xFFFF5A5F);
 
 // ========================== MODEL ==========================
-class CourseModel {
-  final int      id;
-  final String   restaurantName;
-  final double   totalPrice;
-  final String   status;
-  final DateTime createdAt;
-  final LatLng   restaurantPos;
-  final LatLng   customerPos;
-
-  CourseModel({
-    required this.id,
-    required this.restaurantName,
-    required this.totalPrice,
-    required this.status,
-    required this.createdAt,
-    required this.restaurantPos,
-    required this.customerPos,
-  });
-
-  factory CourseModel.fromJson(Map<String, dynamic> json) {
-    return CourseModel(
-      id:             json['id'],
-      restaurantName: json['restaurant_name'] ?? 'Restaurant',
-      totalPrice:     double.tryParse(json['total_price'].toString()) ?? 0.0,
-      status:         json['status'] ?? 'PENDING',
-      createdAt:      DateTime.parse(json['created_at']),
-      restaurantPos:  LatLng(
-        (json['restaurant_lat'] ?? 14.692).toDouble(),
-        (json['restaurant_lng'] ?? -17.445).toDouble(),
-      ),
-      customerPos: LatLng(
-        (json['customer_lat'] ?? 14.6937).toDouble(),
-        (json['customer_lng'] ?? -17.44406).toDouble(),
-      ),
-    );
-  }
-
-  Map<String, dynamic> toJson() => {
-        'id':              id,
-        'restaurant_name': restaurantName,
-        'total_price':     totalPrice,
-        'status':          status,
-        'created_at':      createdAt.toIso8601String(),
-        'restaurant_lat':  restaurantPos.latitude,
-        'restaurant_lng':  restaurantPos.longitude,
-        'customer_lat':    customerPos.latitude,
-        'customer_lng':    customerPos.longitude,
-      };
-}
 
 // ========================== PAGE ==========================
 class CoursePage extends StatefulWidget {
@@ -87,9 +39,20 @@ class _CoursePageState extends State<CoursePage>
 
   late AnimationController _fadeController;
   late Animation<double>   _fadeAnimation;
-
+  
   @override
   void initState() {
+    final active = _activeCourse;
+
+if (active != null) {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => HomeLivreur(course: active),
+    ),
+  );
+  return;
+}
     super.initState();
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
@@ -107,9 +70,10 @@ class _CoursePageState extends State<CoursePage>
 
   // ── Init ─────────────────────────────────────────────
   Future<void> _init() async {
+    
     // 1. Vérifier le token
     try {
-      await LivreurApi.getToken(); // ✅ corrigé : plus de double ()()
+      LivreurApi.getToken(); // ✅ corrigé : plus de double ()()
     } catch (_) {
       if (!mounted) return;
       setState(() {

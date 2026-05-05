@@ -19,6 +19,15 @@ class ApiService {
   static const String _baseUrl = 'https://deligood-backend.onrender.com';
   static const Duration _timeout = Duration(seconds: 20);
 
+  /// ✅ Corrige les URLs d'images : ajoute le slash manquant si besoin
+  static String fixImageUrl(String? raw) {
+    if (raw == null || raw.isEmpty) return '';
+    if (raw.startsWith('http')) return raw;
+    // Assure qu'il y a un slash entre la base et le chemin relatif
+    final path = raw.startsWith('/') ? raw : '/$raw';
+    return '$_baseUrl$path';
+  }
+
   static Future<Map<String, String>> _headers({bool auth = true}) async {
     final headers = {
       'Content-Type': 'application/json',
@@ -69,33 +78,34 @@ class ApiService {
     }
   }
 
-  static Future<dynamic> post(String endpoint, {Map<String, dynamic>? body, bool auth = true}) async {
+  static Future<dynamic> post(String endpoint,
+      {Map<String, dynamic>? body, bool auth = true}) async {
     final uri = Uri.parse('$_baseUrl$endpoint');
-    final response = await http.post(
-      uri,
-      headers: await _headers(auth: auth),
-      body: jsonEncode(body ?? {}),
-    ).timeout(_timeout);
+    final response = await http
+        .post(
+          uri,
+          headers: await _headers(auth: auth),
+          body: jsonEncode(body ?? {}),
+        )
+        .timeout(_timeout);
 
     return _handleResponse(response);
   }
 
   static Future<dynamic> get(String endpoint, {bool auth = true}) async {
     final uri = Uri.parse('$_baseUrl$endpoint');
-    final response = await http.get(
-      uri,
-      headers: await _headers(auth: auth),
-    ).timeout(_timeout);
+    final response = await http
+        .get(uri, headers: await _headers(auth: auth))
+        .timeout(_timeout);
 
     return _handleResponse(response);
   }
 
   static Future<dynamic> delete(String endpoint, {bool auth = true}) async {
     final uri = Uri.parse('$_baseUrl$endpoint');
-    final response = await http.delete(
-      uri,
-      headers: await _headers(auth: auth),
-    ).timeout(_timeout);
+    final response = await http
+        .delete(uri, headers: await _headers(auth: auth))
+        .timeout(_timeout);
 
     return _handleResponse(response);
   }
@@ -121,18 +131,16 @@ class CartItem {
     debugPrint("📦 Parsing CartItem from JSON: $json");
 
     final int id = json['id'] ?? json['menu_item_id'] ?? 0;
-    final String name = json['menu_item_name'] ??
-                       json['name'] ??
-                       'Produit inconnu';
-    final String image = json['menu_item_image'] ??
-                        json['image'] ??
-                        '';
+    final String name =
+        json['menu_item_name'] ?? json['name'] ?? 'Produit inconnu';
+
+    // ✅ Fix URL image : ajoute le slash manquant
+    final String rawImage = json['menu_item_image'] ?? json['image'] ?? '';
+    final String image = ApiService.fixImageUrl(rawImage);
+
     final int quantity = json['quantity'] ?? 1;
 
-    dynamic priceValue = json['menu_item_price'] ??
-                        json['price'] ??
-                        0;
-
+    dynamic priceValue = json['menu_item_price'] ?? json['price'] ?? 0;
     double price;
     if (priceValue is String) {
       price = double.tryParse(priceValue) ?? 0;
@@ -147,7 +155,7 @@ class CartItem {
     return CartItem(
       id: id,
       name: name,
-      image: image.startsWith('http') ? image : '${ApiService._baseUrl}$image',
+      image: image,
       quantity: quantity,
       price: price,
     );
@@ -440,7 +448,8 @@ class CartBottom extends StatelessWidget {
         color: kWhite,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         boxShadow: [
-          BoxShadow(color: Colors.black12, blurRadius: 12, offset: Offset(0, -4)),
+          BoxShadow(
+              color: Colors.black12, blurRadius: 12, offset: Offset(0, -4)),
         ],
       ),
       child: Column(
@@ -605,6 +614,12 @@ class _PanierPageState extends State<PanierPage>
 
       debugPrint("✅ Order confirmation result: $result");
 
+      // ✅ L'API retourne { "message": "...", "order_id": 7, ... }
+      // On essaie 'order_id' en priorité, puis 'id' en fallback
+      final int? orderId = result['order_id'] ?? result['id'];
+
+      debugPrint("🆔 orderId extrait: $orderId");
+
       if (!mounted) return;
 
       _showSnackBar('Commande passée avec succès ✅');
@@ -616,7 +631,7 @@ class _PanierPageState extends State<PanierPage>
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
-          pageBuilder: (_, __, ___) => HomeScreen(orderId: result['id']),
+          pageBuilder: (_, __, ___) => HomeScreen(orderId: orderId),
           transitionsBuilder: (_, animation, __, child) => FadeTransition(
             opacity: animation,
             child: child,
@@ -643,90 +658,90 @@ class _PanierPageState extends State<PanierPage>
           children: [
             Icon(
               error ? Icons.error_outline : Icons.check_circle_outline,
-              color: Colors.white, size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  msg,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 13,
-                  ),
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                msg,
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontSize: 13,
                 ),
               ),
-            ],
-          ),
-          backgroundColor: error ? Colors.red : Colors.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          margin: EdgeInsets.all(4.w),
-          duration: const Duration(milliseconds: 2000),
+            ),
+          ],
         ),
-      );
-    }
-
-    @override
-    Widget build(BuildContext context) {
-      debugPrint("🏗️ Building PanierPage UI");
-      return Scaffold(
-        backgroundColor: kBg,
-        body: SafeArea(
-          child: Column(
-            children: [
-              CartHeader(onRefresh: _loadCart),
-              Expanded(
-                child: FutureBuilder<List<CartItem>>(
-                  future: _futureCart,
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      debugPrint("⏳ Loading cart data...");
-                      return const Center(
-                        child: CircularProgressIndicator(
-                          color: kOrange,
-                        ),
-                      );
-                    }
-
-                    if (snapshot.hasError) {
-                      debugPrint("❌ Error in cart FutureBuilder: ${snapshot.error}");
-                      return CartError(onRetry: _loadCart);
-                    }
-
-                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                      debugPrint("📭 Cart is empty");
-                      return const EmptyCart();
-                    }
-
-                    final items = snapshot.data!;
-                    debugPrint("🛒 Displaying ${items.length} cart items");
-
-                    return Column(
-                      children: [
-                        Expanded(
-                          child: CartList(
-                            items: items,
-                            animationController: _anim,
-                          ),
-                        ),
-                        CartBottom(
-                          total: _total(items),
-                          isLoading: _ordering,
-                          onCommand: _commander,
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+        backgroundColor: error ? Colors.red : Colors.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
         ),
-      );
-    }
+        margin: EdgeInsets.all(4.w),
+        duration: const Duration(milliseconds: 2000),
+      ),
+    );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    debugPrint("🏗️ Building PanierPage UI");
+    return Scaffold(
+      backgroundColor: kBg,
+      body: SafeArea(
+        child: Column(
+          children: [
+            CartHeader(onRefresh: _loadCart),
+            Expanded(
+              child: FutureBuilder<List<CartItem>>(
+                future: _futureCart,
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    debugPrint("⏳ Loading cart data...");
+                    return const Center(
+                      child: CircularProgressIndicator(color: kOrange),
+                    );
+                  }
+
+                  if (snapshot.hasError) {
+                    debugPrint(
+                        "❌ Error in cart FutureBuilder: ${snapshot.error}");
+                    return CartError(onRetry: _loadCart);
+                  }
+
+                  if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                    debugPrint("📭 Cart is empty");
+                    return const EmptyCart();
+                  }
+
+                  final items = snapshot.data!;
+                  debugPrint("🛒 Displaying ${items.length} cart items");
+
+                  return Column(
+                    children: [
+                      Expanded(
+                        child: CartList(
+                          items: items,
+                          animationController: _anim,
+                        ),
+                      ),
+                      CartBottom(
+                        total: _total(items),
+                        isLoading: _ordering,
+                        onCommand: _commander,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 // ================== PANIER API HELPER ==================
 class PanierApi {
@@ -775,7 +790,7 @@ class PanierApi {
   }) async {
     try {
       final result = await ApiService.post(
-        '/api/orders/orders/create/',
+        '/api/orders/create/',
         body: {
           'first_name': firstName,
           'last_name': lastName,

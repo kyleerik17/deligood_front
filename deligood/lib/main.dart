@@ -29,14 +29,35 @@ Map<String, dynamic> decodeJwt(String token) {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 🔇 Filtre le bruit Flutter interne
+  final originalDebugPrint = debugPrint;
+  debugPrint = (String? message, {int? wrapWidth}) {
+    if (message == null) return;
+    if (message.contains('Another exception was thrown') ||
+        message.contains('Assertion failed') ||
+        message.contains('org-dartlang-sdk') ||
+        message.contains('js_primitives') ||
+        message.contains('_engine/engine') ||
+        message.contains('DebugService') ||
+        message.contains('Cannot send Null') ||
+        message.contains('ext.flutter.') ||
+        message.contains('Failed to set') ||
+        message.contains('Deep links to DevTools') ||
+        message.contains('Unknown method')) {
+      return;
+    }
+    originalDebugPrint(message, wrapWidth: wrapWidth);
+  };
+
   final session = SessionManager();
   await Future.wait([
     session.loadSession(),
     AuthState.instance.loadFromPrefs(),
   ]);
+
   runApp(const MyApp());
 }
-
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -47,7 +68,7 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'DeliGood',
-          home: const SplashScreen(orderId: 0,),
+          home: const AuthWrapper(),
         );
       },
     );
@@ -96,8 +117,7 @@ class _AuthWrapperState extends State<AuthWrapper> {
 
     setState(() {
       orderId = storedOrderId;
-      userRole = (token != null && token.isNotEmpty &&
-                  type != null && type.isNotEmpty)
+      userRole = (token != null && token.isNotEmpty && type.isNotEmpty)
           ? type.toLowerCase().trim()
           : null;
       isLoading = false;

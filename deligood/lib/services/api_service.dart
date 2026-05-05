@@ -394,7 +394,7 @@ static String imageUrl(String path) {
 
   static Future<Map<String, dynamic>> getOrderDetails(int orderId) async {
     try {
-      final data = await get('/api/orders/orders/$orderId/');
+      final data = await get('/api/orders/$orderId/');
       return data as Map<String, dynamic>;
     } catch (e) {
       throw HttpException('Failed to get order details: ${e.toString()}');
@@ -403,7 +403,7 @@ static String imageUrl(String path) {
 
   static Future<Map<String, dynamic>> getOrderPositions(int orderId) async {
     try {
-      final data = await get('/api/orders/orders/$orderId/positions/');
+      final data = await get('/api/orders/$orderId/positions/');
       return data as Map<String, dynamic>;
     } catch (e) {
       throw HttpException('Failed to get order positions: ${e.toString()}');
@@ -412,7 +412,7 @@ static String imageUrl(String path) {
 
   static Future<List<dynamic>> getUserOrders() async {
     try {
-      final data = await get('/api/orders/orders/');
+      final data = await get('/api/orders/');
       if (data is List) return data;
       if (data is Map && data['results'] != null) return data['results'] as List;
       return [];
@@ -424,7 +424,7 @@ static String imageUrl(String path) {
   // ===================== DELIVERY MANAGEMENT =====================
   static Future<List<dynamic>> fetchAvailableOrders() async {
     try {
-      final data = await get('/api/orders/orders/livreur/available/');
+      final data = await get('/api/orders/livreur/available/');
       if (data is List) return data;
       if (data is Map && data['results'] != null) return data['results'] as List;
       return [];
@@ -435,7 +435,7 @@ static String imageUrl(String path) {
 
   static Future<void> pickupOrder(int orderId) async {
     try {
-      await post('/api/orders/orders/livreur/$orderId/pickup/');
+      await post('/api/orders/livreur/$orderId/pickup/');
     } catch (e) {
       throw HttpException('Failed to pickup order: ${e.toString()}');
     }
@@ -443,7 +443,7 @@ static String imageUrl(String path) {
 
   static Future<void> deliverOrder(int orderId) async {
     try {
-      await post('/api/orders/orders/livreur/$orderId/deliver/');
+      await post('/api/orders/livreur/$orderId/deliver/');
     } catch (e) {
       throw HttpException('Failed to mark order as delivered: ${e.toString()}');
     }
@@ -451,7 +451,7 @@ static String imageUrl(String path) {
 
   static Future<List<dynamic>> fetchMyDeliveries() async {
     try {
-      final data = await get('/api/orders/orders/livreur/my-orders/');
+      final data = await get('/api/orders/livreur/my-orders/');
       if (data is List) return data;
       if (data is Map && data['results'] != null) return data['results'] as List;
       return [];
@@ -462,7 +462,7 @@ static String imageUrl(String path) {
 
   static Future<List<dynamic>> fetchDeliveredOrders() async {
     try {
-      final data = await get('/api/orders/orders/livreur/delivered/');
+      final data = await get('/api/orders/livreur/delivered/');
       if (data is List) return data;
       if (data is Map && data['results'] != null) return data['results'] as List;
       return [];
@@ -537,7 +537,7 @@ static Future<Map<String, dynamic>> updateDeliveryLocation({
 }) async {
   try {
     final data = await patch(
-      '/api/orders/orders/livreur/$orderId/location/',
+      '/api/orders/livreur/$orderId/location/',
       body: {
         'latitude': latitude,
         'longitude': longitude,

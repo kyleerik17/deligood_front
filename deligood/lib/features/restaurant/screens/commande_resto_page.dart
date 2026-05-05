@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:deligood/core/session/auth_service.dart';
 import 'package:deligood/features/auth/auth_state.dart';
 import 'package:deligood/features/restaurant/widgets/commande_detail_page.dart';
 import 'package:deligood/features/restaurant/widgets/commande_resto_model.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;

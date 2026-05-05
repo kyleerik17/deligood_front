@@ -103,7 +103,7 @@ class _HistoriquePageState extends State<HistoriquePage> {
     };
 
     final response = await http.get(
-      Uri.parse('$baseUrl/api/orders/orders/restaurant/'),
+      Uri.parse('$baseUrl/api/orders/restaurant/'),
       headers: headers,
     );
 
