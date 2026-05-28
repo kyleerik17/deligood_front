@@ -1,65 +1,27 @@
-import 'package:deligood/core/session/session_manager.dart';
-import 'package:deligood/features/auth/auth_state.dart';
-import 'package:deligood/features/auth/screens/login/login_page.dart';
-import 'package:deligood/features/client/screens/splash_screen.dart';
-import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
 
+import 'package:deligood/core/styles/app_theme.dart';
+// Pages
+import 'package:deligood/features/auth/screens/login/login_page.dart';
 import 'package:deligood/widgets/CustomBottomNavBar.dart';
-
-// ── Logger silencieux en production ──
-void _log(String msg) {
-  if (kDebugMode) print(msg);
-}
-
-Map<String, dynamic> decodeJwt(String token) {
-  final parts = token.split('.');
-  if (parts.length != 3) return {};
-  String payload = parts[1];
-  switch (payload.length % 4) {
-    case 2: payload += '=='; break;
-    case 3: payload += '='; break;
-  }
-  final decoded = utf8.decode(base64Url.decode(payload));
-  return jsonDecode(decoded) as Map<String, dynamic>;
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🔇 Filtre le bruit Flutter interne
-  final originalDebugPrint = debugPrint;
-  debugPrint = (String? message, {int? wrapWidth}) {
-    if (message == null) return;
-    if (message.contains('Another exception was thrown') ||
-        message.contains('Assertion failed') ||
-        message.contains('org-dartlang-sdk') ||
-        message.contains('js_primitives') ||
-        message.contains('_engine/engine') ||
-        message.contains('DebugService') ||
-        message.contains('Cannot send Null') ||
-        message.contains('ext.flutter.') ||
-        message.contains('Failed to set') ||
-        message.contains('Deep links to DevTools') ||
-        message.contains('Unknown method')) {
-      return;
-    }
-    originalDebugPrint(message, wrapWidth: wrapWidth);
-  };
+  // Récupération sécurisée du orderId depuis SharedPreferences
+  final prefs = await SharedPreferences.getInstance();
+  final orderId = prefs.getInt('order_id') ?? 0;
 
-  final session = SessionManager();
-  await Future.wait([
-    session.loadSession(),
-    AuthState.instance.loadFromPrefs(),
-  ]);
-
-  runApp(const MyApp());
+  runApp(MyApp(orderId: orderId));
 }
+
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final int orderId;
+
+  const MyApp({super.key, required this.orderId});
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +30,12 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           title: 'DeliGood',
-          home: const AuthWrapper(),
+          theme: AppTheme.light,
+          home: AuthWrapper(orderId: orderId),
+          routes: {
+            '/login': (_) =>
+                LoginPage(orderId: orderId, onLoginSuccess: (_) {}),
+          },
         );
       },
     );
@@ -76,7 +43,8 @@ class MyApp extends StatelessWidget {
 }
 
 class AuthWrapper extends StatefulWidget {
-  const AuthWrapper({super.key});
+  final int orderId;
+  const AuthWrapper({super.key, required this.orderId});
 
   @override
   State<AuthWrapper> createState() => _AuthWrapperState();
@@ -84,87 +52,67 @@ class AuthWrapper extends StatefulWidget {
 
 class _AuthWrapperState extends State<AuthWrapper> {
   String? userRole;
-  int orderId = 0;
   bool isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _init();
-  }
-
-  Future<void> _init() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    // ✅ Priorité 1 : token depuis AuthState (chargé dans main())
-    String? token = AuthState.instance.token.isNotEmpty
-        ? AuthState.instance.token
-        : null;
-
-    // ✅ Priorité 2 : SharedPreferences
-    token ??= prefs.getString('access_token');
-
-    final type = prefs.getString('user_type') ??
-        AuthState.instance.userRole;
-
-    final storedOrderId = prefs.getInt('order_id') ?? 0;
-
-    _log('🔑 TOKEN (init) → ${token != null && token.isNotEmpty ? "OUI (${token.length} chars)" : "NON ❌"}');
-    _log('👤 USER TYPE → $type');
-    _log('🗝 TOUTES LES CLÉS → ${prefs.getKeys()}');
-
-    if (!mounted) return;
-
-    setState(() {
-      orderId = storedOrderId;
-      userRole = (token != null && token.isNotEmpty && type.isNotEmpty)
-          ? type.toLowerCase().trim()
-          : null;
-      isLoading = false;
+    // ✅ Utiliser addPostFrameCallback pour éviter l'accès prématuré à window/MediaQuery
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkLogin();
     });
   }
 
-  Future<void> onLoginSuccess(String type) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_type', type.toLowerCase().trim());
+  Future<void> _checkLogin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('access_token');
+      final type = prefs.getString('user_type');
 
-    final token = prefs.getString('access_token');
-    _log('✅ onLoginSuccess → type=$type | token=${token != null ? "OUI" : "NON ❌"}');
-    _log('🗝 CLÉS APRÈS LOGIN → ${prefs.getKeys()}');
+      // Petite pause pour le splash/chargement
+      await Future.delayed(const Duration(milliseconds: 300));
 
-    if (!mounted) return;
-    setState(() {
-      userRole = type.toLowerCase().trim();
-    });
+      // ✅ Vérifier mounted avant setState (sécurité cycle de vie Web)
+      if (!mounted) return;
+      
+      setState(() {
+        if (token != null && type != null) {
+          userRole = type.toLowerCase();
+        }
+        isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('❌ AuthWrapper error: $e');
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
-  Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('access_token');
-    await prefs.remove('user_type');
-    await prefs.remove('user_id');
-    await prefs.remove('first_name');
-    await prefs.remove('last_name');
-    await prefs.remove('phone_number');
-    await prefs.remove('email');
-
-    AuthState.instance.clear();
-    _log('🚪 Logout effectué');
-
+  void _onLoginSuccess(String type) {
     if (!mounted) return;
-    setState(() => userRole = null);
+    setState(() {
+      userRole = type.toLowerCase();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
+      // ✅ Écran de chargement simple, sans Sizer/MediaQuery dépendant
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        backgroundColor: AppColors.surface,
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.orange),
+        ),
       );
     }
 
-    return userRole != null
-        ? CustomBottomNavBar(userRole: userRole!, orderId: orderId)
-        : LoginScreen(orderId: orderId, onLoginSuccess: onLoginSuccess);
+    if (userRole != null) {
+      return CustomBottomNavBar(userRole: userRole!, orderId: widget.orderId);
+    } else {
+      return LoginPage(
+        orderId: widget.orderId,
+        onLoginSuccess: _onLoginSuccess,
+      );
+    }
   }
 }

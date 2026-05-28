@@ -1,10 +1,11 @@
 import 'dart:convert';
+import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/livreur/screens/pages/details_commande_page.dart';
 import 'package:flutter/material.dart';
 import 'package:sizer/sizer.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'panier_page.dart';
+import 'package:deligood/features/orders/screens/cart_page.dart';
 
 class ProduitDetailPage extends StatefulWidget {
   final MenuItem menuItem;
@@ -34,11 +35,22 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('access_token');
 
+    if (token == null || token.isEmpty) {
+      setState(() => loading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Connectez-vous pour ajouter au panier"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
     final response = await http.post(
-      Uri.parse('https://deligood-backend.onrender.com/api/orders/cart/add/'),
+      Uri.parse('${Api.baseUrl}/api/orders/cart/'),
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Token $token',
+        'Authorization': Api.authHeaderValue(token),
       },
       body: jsonEncode({
         "menu_item_id": widget.menuItem.id,
@@ -48,7 +60,7 @@ class _ProduitDetailPageState extends State<ProduitDetailPage> {
 
     setState(() => loading = false);
 
-    if (response.statusCode == 200) {
+    if (response.statusCode == 200 || response.statusCode == 201) {
       // Afficher un message de succès sans redirection
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

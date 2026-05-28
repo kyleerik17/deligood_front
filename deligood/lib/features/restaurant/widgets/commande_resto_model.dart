@@ -21,7 +21,8 @@ class CommandeItem {
   factory CommandeItem.fromJson(Map<String, dynamic> json) {
     final quantity = int.tryParse(json['quantity']?.toString() ?? '1') ?? 1;
 
-    final unitPrice = double.tryParse(
+    final unitPrice =
+        double.tryParse(
           json['unit_price']?.toString() ??
               json['menu_item_price']?.toString() ??
               '0',
@@ -91,29 +92,35 @@ class CommandeResto {
 
     final instance = CommandeResto(
       id: int.tryParse(json['id']?.toString() ?? '0') ?? 0,
-      clientName: json['client_name']?.toString() ??
+      clientName:
+          json['client_name']?.toString() ??
           json['customer_name']?.toString() ??
           json['user_name']?.toString() ??
           json['username']?.toString() ??
           'Client',
-      phone: json['client_phone']?.toString() ??
+      phone:
+          json['client_phone']?.toString() ??
           json['phone']?.toString() ??
           json['phone_number']?.toString() ??
           '',
-      address: json['client_address']?.toString() ??
+      address:
+          json['client_address']?.toString() ??
           json['address']?.toString() ??
           json['delivery_address']?.toString() ??
           '',
       status: json['status']?.toString() ?? 'pending',
       createdAt: parsedDate ?? DateTime.now(),
-      totalPrice: double.tryParse(json['total_price']?.toString() ?? '0') ??
+      totalPrice:
+          double.tryParse(json['total_price']?.toString() ?? '0') ??
           double.tryParse(json['total']?.toString() ?? '0') ??
           0.0,
       items: itemsList,
     );
 
     // ✅ Un seul log léger par commande
-    _log('📦 #${instance.id} | ${instance.clientName} | ${instance.status} | ${instance.total} FCFA | ${instance.items.length} item(s)');
+    _log(
+      '📦 #${instance.id} | ${instance.clientName} | ${instance.status} | ${instance.total} FCFA | ${instance.items.length} item(s)',
+    );
 
     return instance;
   }

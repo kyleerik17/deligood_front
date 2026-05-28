@@ -38,14 +38,14 @@ class CourseModel {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'restaurant_name': restaurantName,
-        'total_price': totalPrice,
-        'status': status,
-        'created_at': createdAt.toIso8601String(),
-        'restaurant_lat': restaurantPos.latitude,
-        'restaurant_lng': restaurantPos.longitude,
-        'customer_lat': customerPos.latitude,
-        'customer_lng': customerPos.longitude,
-      };
+    'id': id,
+    'restaurant_name': restaurantName,
+    'total_price': totalPrice,
+    'status': status,
+    'created_at': createdAt.toIso8601String(),
+    'restaurant_lat': restaurantPos.latitude,
+    'restaurant_lng': restaurantPos.longitude,
+    'customer_lat': customerPos.latitude,
+    'customer_lng': customerPos.longitude,
+  };
 }

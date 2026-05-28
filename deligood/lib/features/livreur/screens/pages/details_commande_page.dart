@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'package:deligood/features/pages/produit_detail_page.dart';
+import 'package:deligood/core/network/api.dart';
+import 'package:deligood/features/menu/screens/produit_detail_page.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -59,11 +60,11 @@ class _CommandePageState extends State<CommandePage>
 
     final response = await http.get(
       Uri.parse(
-        'https://deligood-backend.onrender.com/api/orders/menu/restaurant/${widget.restaurantId}/',
+        '${Api.baseUrl}/api/menu/items/?restaurant_id=${widget.restaurantId}',
       ),
       headers: {
         'Content-Type': 'application/json',
-        if (token != null) 'Authorization': 'Token $token',
+        if (token != null) 'Authorization': Api.authHeaderValue(token),
       },
     );
 

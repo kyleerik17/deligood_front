@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:sizer/sizer.dart';
+import 'package:deligood/core/network/api.dart';
 
 // ======================= MODELES =========================
 class HistoriqueItem {
@@ -82,7 +83,7 @@ class HistoriquePage extends StatefulWidget {
 
 class _HistoriquePageState extends State<HistoriquePage> {
   late Future<List<HistoriqueItem>> _historiqueFuture;
-  static const String baseUrl = "https://deligood-backend.onrender.com";
+  static String get baseUrl => Api.baseUrl;
 
   @override
   void initState() {

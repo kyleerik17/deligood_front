@@ -5,6 +5,25 @@ class SessionManager {
   factory SessionManager() => _instance;
   SessionManager._internal();
 
+  static const _sessionKeys = <String>{
+    'access_token',
+    'token',
+    'refresh_token',
+    'user_type',
+    'user_role',
+    'user_id',
+    'first_name',
+    'last_name',
+    'phone_number',
+    'email',
+    'avatar_base64',
+    'order_id',
+    'last_order_id',
+    'cart',
+    'panier',
+    'selected_restaurant',
+  };
+
   String? token;
   String? userType;
   int? userId;
@@ -13,71 +32,67 @@ class SessionManager {
   String? phoneNumber;
   String? email;
 
-  // ================= SAVE SESSION =================
   Future<void> saveSession({
-  required String token,
-  required String userType,
-  required int userId,
-  String? firstName,
-  String? lastName,
-  String? phoneNumber,
-  String? email,
-}) async {
-  final prefs = await SharedPreferences.getInstance();
+    required String token,
+    required String userType,
+    required int userId,
+    String? firstName,
+    String? lastName,
+    String? phoneNumber,
+    String? email,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final normalizedRole = userType.toLowerCase().trim();
 
-  this.token = token;
-  this.userType = userType;
-  this.userId = userId;
-  this.firstName = firstName;
-  this.lastName = lastName;
-  this.phoneNumber = phoneNumber;
-  this.email = email;
+    this.token = token;
+    this.userType = normalizedRole;
+    this.userId = userId;
+    this.firstName = firstName;
+    this.lastName = lastName;
+    this.phoneNumber = phoneNumber;
+    this.email = email;
 
-  // ✅ Sauvegarde seulement si le token n'est pas vide
-  if (token.isNotEmpty) {
-    await prefs.setString('access_token', token);
-  }
-  await prefs.setString('user_type', userType);
-  await prefs.setInt('user_id', userId);
+    if (token.isNotEmpty) {
+      await prefs.setString('access_token', token);
+    }
+    await prefs.setString('user_type', normalizedRole);
+    await prefs.setInt('user_id', userId);
 
-  if (firstName != null && firstName.isNotEmpty) {
-    await prefs.setString('first_name', firstName);
+    if (firstName != null && firstName.isNotEmpty) {
+      await prefs.setString('first_name', firstName);
+    }
+    if (lastName != null && lastName.isNotEmpty) {
+      await prefs.setString('last_name', lastName);
+    }
+    if (phoneNumber != null && phoneNumber.isNotEmpty) {
+      await prefs.setString('phone_number', phoneNumber);
+    }
+    if (email != null && email.isNotEmpty) {
+      await prefs.setString('email', email);
+    }
   }
-  if (lastName != null && lastName.isNotEmpty) {
-    await prefs.setString('last_name', lastName);
-  }
-  if (phoneNumber != null && phoneNumber.isNotEmpty) {
-    await prefs.setString('phone_number', phoneNumber);
-  }
-  if (email != null && email.isNotEmpty) {
-    await prefs.setString('email', email);
-  }
-}
 
-Future<void> clearSession() async {
-  final prefs = await SharedPreferences.getInstance();
-  token = null;
-  userType = null;
-  userId = null;
-  firstName = null;
-  lastName = null;
-  phoneNumber = null;
-  email = null;
+  Future<void> clearSession({bool clearAppCache = true}) async {
+    final prefs = await SharedPreferences.getInstance();
 
-  // ✅ Supprime seulement les clés de session, pas tout
-  await prefs.remove('access_token');
-  await prefs.remove('user_type');
-  await prefs.remove('user_id');
-  await prefs.remove('first_name');
-  await prefs.remove('last_name');
-  await prefs.remove('phone_number');
-  await prefs.remove('email');
-}
-  // ================= LOAD SESSION =================
+    token = null;
+    userType = null;
+    userId = null;
+    firstName = null;
+    lastName = null;
+    phoneNumber = null;
+    email = null;
+
+    final keysToRemove = clearAppCache ? prefs.getKeys() : _sessionKeys;
+    for (final key in keysToRemove) {
+      await prefs.remove(key);
+    }
+  }
+
   Future<void> loadSession() async {
     final prefs = await SharedPreferences.getInstance();
     token = prefs.getString('access_token');
-    userType = prefs.getString('user_type');
+    userType = prefs.getString('user_type')?.toLowerCase().trim();
     userId = prefs.getInt('user_id');
     firstName = prefs.getString('first_name');
     lastName = prefs.getString('last_name');
@@ -93,8 +108,6 @@ Future<void> clearSession() async {
   String get fullName {
     final f = firstName ?? '';
     final l = lastName ?? '';
-    return "$f $l".trim();
+    return '$f $l'.trim();
   }
-
-  
 }

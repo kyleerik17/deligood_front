@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
 
-
 class ProductDetailPage extends StatefulWidget {
   final MenuItem item;
 
@@ -275,10 +274,10 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
       if (token == null) throw Exception("Utilisateur non connecté");
 
       final response = await http.post(
-        Uri.parse('${ApiService.baseUrl}/api/orders/cart/add/'),
+        Uri.parse('${Api.baseUrl}/api/orders/cart/'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Token $token',
+          'Authorization': Api.authHeaderValue(token),
         },
         body: jsonEncode({
           'menu_item_id': widget.item.id,
@@ -286,7 +285,7 @@ class _ProductDetailPageState extends State<ProductDetailPage> {
         }),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text("Ajouté au panier avec succès"),

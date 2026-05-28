@@ -1,92 +1,22 @@
-import 'package:deligood/core/api/menu_service.dart';
-import 'package:deligood/features/auth/auth_state.dart';
-import 'package:deligood/features/restaurant/screens/commande_resto_page.dart';
-import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sizer/sizer.dart';
-
-// ─────────────────────────────
-// DESIGN SYSTEM
-// ─────────────────────────────
-const kOrange = Color(0xFFFF6B35);
-const kBg = Color(0xFFF7F3EF);
-const kWhite = Colors.white;
-const kTextPrimary = Color(0xFF1A1A1A);
-const kSuccess = Color(0xFF4CAF50);
-const kError = Color(0xFFFF5A5F);
-const kGrey = Color(0xFF9E9E9E);
-
-// ─────────────────────────────
-// WIDGETS
-// ─────────────────────────────
-class CustomTextField extends StatelessWidget {
-  final TextEditingController controller;
-  final String labelText;
-  final TextInputType? keyboardType;
-  final String? Function(String?)? validator;
-
-  const CustomTextField({
-    super.key,
-    required this.controller,
-    required this.labelText,
-    this.keyboardType,
-    this.validator,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return TextFormField(
-      controller: controller,
-      keyboardType: keyboardType,
-      decoration: InputDecoration(
-        labelText: labelText,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-      validator: validator,
-    );
-  }
-}
-
-class CustomButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final String text;
-  final bool loading;
-
-  const CustomButton({
-    super.key,
-    required this.onPressed,
-    required this.text,
-    this.loading = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ElevatedButton(
-      onPressed: loading ? null : onPressed,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: kOrange,
-        minimumSize: Size(double.infinity, 6.h),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-      ),
-      child: loading
-          ? const CircularProgressIndicator(color: Colors.white)
-          : Text(text),
-    );
-  }
-}
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:deligood/core/network/api.dart';
+import 'package:deligood/features/client/screens/Home_screen.dart';
 
 class CreateMenuPage extends StatefulWidget {
   final String userRole;
+  final int orderId;
 
-  const CreateMenuPage({super.key, required this.userRole});
+  const CreateMenuPage({
+    super.key,
+    required this.userRole,
+    required this.orderId,
+  });
 
   @override
   State<CreateMenuPage> createState() => _CreateMenuPageState();
@@ -94,272 +24,256 @@ class CreateMenuPage extends StatefulWidget {
 
 class _CreateMenuPageState extends State<CreateMenuPage> {
   final _formKey = GlobalKey<FormState>();
-
   final nameCtrl = TextEditingController();
   final descCtrl = TextEditingController();
   final priceCtrl = TextEditingController();
-
-  List<Map<String, dynamic>> categories = [];
-  Map<String, dynamic>? selectedCategory;
-
+  int? categoryId;
   Uint8List? imageBytes;
   bool loading = false;
-  bool loadingCategories = true;
 
   final picker = ImagePicker();
 
-  final Map<String, IconData> categoryIcons = {
-    'Nourriture': Icons.rice_bowl_rounded,
-    'Boisson': Icons.local_drink_rounded,
-    'Dessert': Icons.cake_rounded,
-  };
+  final categories = [
+    {'id': 1, 'name': 'Boisson'},
+    {'id': 2, 'name': 'Nourriture'},
+    {'id': 3, 'name': 'Dessert'},
+  ];
 
   @override
   void initState() {
     super.initState();
-      SharedPreferences.getInstance().then((p) => p.remove('categories_cache')); // ⚠️ temporaire
-  
-    _loadCategories();
+    print("=== CreateMenuPage ouverte ===");
   }
 
-  Future<void> _loadCategories() async {
-    try {
-      setState(() => loadingCategories = true);
-
-      final data = await MenuService.getCategories();
-
-      if (!mounted) return;
-
-      setState(() {
-        categories = data;
-        loadingCategories = false;
-      });
-
-      debugPrint("✅ CATEGORIES LOADED => ${data.length}");
-    } catch (e) {
-      debugPrint("❌ LOAD CATEGORIES ERROR => $e");
-
-      setState(() {
-        categories = [];
-        loadingCategories = false;
-      });
-
-      _show("Erreur lors du chargement des catégories", true);
-    }
-  }
-
-  Future<void> _pickImage() async {
-    try {
-      final img = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 80,
+  Future<void> pickImage() async {
+    final img = await picker.pickImage(source: ImageSource.gallery);
+    if (img != null) {
+      final bytes = await img.readAsBytes();
+      setState(() => imageBytes = bytes);
+      print(
+        "Image choisie: ${img.name}, taille: ${bytes.lengthInBytes} octets",
       );
-
-      if (img != null) {
-        final bytes = await img.readAsBytes();
-        setState(() => imageBytes = bytes);
-      }
-    } catch (e) {
-      _show("Erreur lors de la sélection de l'image", true);
     }
   }
 
-  Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+  Future<Map<String, dynamic>> getUserData() async {
+    final prefs = await SharedPreferences.getInstance();
+    return {
+      'access_token': prefs.getString('access_token'),
+      'user_type': prefs.getString('user_type'),
+      'restaurant_id': prefs.getInt('restaurant_id'),
+    };
+  }
 
-    if (selectedCategory == null) {
-      _show("Choisis une catégorie", true);
-      return;
-    }
-
-    if (imageBytes == null) {
-      _show("Ajoute une image", true);
-      return;
-    }
+  Future<void> submit() async {
+    if (!_formKey.currentState!.validate() || categoryId == null) return;
 
     setState(() => loading = true);
 
+    final userData = await getUserData();
+    final token = userData['access_token'];
+    final userType = userData['user_type'];
+
+    if (token == null || userType != 'restaurant') {
+      setState(() => loading = false);
+      return;
+    }
+
+    final uri = Uri.parse('${Api.baseUrl}/api/menu/create/');
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Authorization'] = Api.authHeaderValue(token)
+      ..fields['name'] = nameCtrl.text
+      ..fields['description'] = descCtrl.text
+      ..fields['price'] = priceCtrl.text
+      ..fields['category'] = categoryId.toString();
+
+    if (imageBytes != null) {
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'image',
+          imageBytes!,
+          filename: 'plat.png',
+        ),
+      );
+    }
+
     try {
-      final result = await MenuService.createMenuItem(
-        token: AuthState.instance.token,
-        name: nameCtrl.text.trim(),
-        description: descCtrl.text.trim(),
-        price: int.tryParse(priceCtrl.text) ?? 0,
-        categoryId: selectedCategory!['id'],
-        imageBytes: imageBytes,
-      );
+      final response = await request.send();
+      final respStr = await response.stream.bytesToString();
+      setState(() => loading = false);
 
-      if (result['success'] == true) {
-        _show("Plat ajouté avec succès", false);
-
-        nameCtrl.clear();
-        descCtrl.clear();
-        priceCtrl.clear();
-
-        setState(() {
-          imageBytes = null;
-          selectedCategory = null;
-        });
-
-        Navigator.of(context).pushAndRemoveUntil(
-  PageRouteBuilder(
-    transitionDuration: const Duration(milliseconds: 400),
-    pageBuilder: (context, animation, secondaryAnimation) {
-      return CommandeRestoPage();
-    },
-    transitionsBuilder: (context, animation, secondaryAnimation, child) {
-      return FadeTransition(
-        opacity: animation,
-        child: child,
-      );
-    },
-  ),
-  (route) => false,
-);
+      if (response.statusCode == 201) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Plat créé avec succès')));
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => HomeScreen(orderId: widget.orderId),
+          ),
+        );
       } else {
-        _show(result['message'] ?? "Erreur lors de la création", true);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Erreur: $respStr')));
       }
     } catch (e) {
-      _show("Erreur réseau: ${e.toString()}", true);
-    } finally {
       setState(() => loading = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Erreur réseau')));
     }
-  }
-
-  void _show(String msg, bool error) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: error ? kError : kSuccess,
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final inputDecoration = InputDecoration(
+      filled: true,
+      fillColor: Colors.orange[50],
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: Colors.deepOrange, width: 2),
+      ),
+    );
+
     return Scaffold(
-      backgroundColor: kBg,
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        backgroundColor: Colors.transparent,
         title: Text(
-          "Ajouter un plat",
-          style: GoogleFonts.playfairDisplay(fontWeight: FontWeight.bold),
+          'Créer un plat',
+          style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 20),
         ),
-        centerTitle: true,
+        backgroundColor: Colors.deepOrange,
+        elevation: 4,
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.all(5.w),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            children: [
-              // IMAGE
-              GestureDetector(
-                onTap: _pickImage,
-                child: Container(
-                  height: 22.h,
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: kWhite,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: kOrange),
-                  ),
-                  child: imageBytes == null
-                      ? const Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.add_a_photo, size: 40, color: kGrey),
-                              SizedBox(height: 10),
-                              Text("Ajouter une image", style: TextStyle(color: kGrey)),
-                            ],
-                          ),
-                        )
-                      : ClipRRect(
-                          borderRadius: BorderRadius.circular(20),
-                          child: Image.memory(imageBytes!, fit: BoxFit.cover),
-                        ),
-                ),
-              ),
-
-              SizedBox(height: 3.h),
-
-              // NOM
-              CustomTextField(
-                controller: nameCtrl,
-                labelText: "Nom",
-                validator: (v) => v!.isEmpty ? "Requis" : null,
-              ),
-
-              SizedBox(height: 2.h),
-
-              // DESCRIPTION
-              CustomTextField(
-                controller: descCtrl,
-                labelText: "Description",
-                validator: (v) => v!.isEmpty ? "Requis" : null,
-              ),
-
-              SizedBox(height: 2.h),
-
-              // PRIX
-              CustomTextField(
-                controller: priceCtrl,
-                labelText: "Prix",
-                keyboardType: TextInputType.number,
-                validator: (v) {
-                  if (v!.isEmpty) return "Requis";
-                  if (int.tryParse(v) == null) return "Prix invalide";
-                  return null;
-                },
-              ),
-
-              SizedBox(height: 3.h),
-
-              // CATEGORIE
-              loadingCategories
-                  ? const Center(child: CircularProgressIndicator())
-                  : categories.isEmpty
-                      ? const Text("Aucune catégorie")
-                      : DropdownButtonFormField<Map<String, dynamic>>(
-                          initialValue: selectedCategory,
-                          isExpanded: true,
-                          decoration: InputDecoration(
-                            labelText: "Catégorie",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          items: categories.map((cat) {
-                            return DropdownMenuItem(
-                              value: cat,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    categoryIcons[cat['name']] ?? Icons.label,
-                                    color: kOrange,
-                                    size: 16,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(cat['name']),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() => selectedCategory = value);
-                          },
-                        ),
-
-              SizedBox(height: 4.h),
-
-              // SUBMIT
-              CustomButton(
-                onPressed: _submit,
-                text: "Publier",
-                loading: loading,
+        padding: const EdgeInsets.all(20),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black12,
+                blurRadius: 12,
+                offset: Offset(0, 6),
               ),
             ],
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                TextFormField(
+                  controller: nameCtrl,
+                  style: GoogleFonts.poppins(),
+                  decoration: inputDecoration.copyWith(labelText: 'Nom'),
+                  validator: (v) => v!.isEmpty ? 'Champ requis' : null,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: descCtrl,
+                  maxLines: 3,
+                  style: GoogleFonts.poppins(),
+                  decoration: inputDecoration.copyWith(
+                    labelText: 'Description',
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: priceCtrl,
+                  keyboardType: TextInputType.number,
+                  style: GoogleFonts.poppins(),
+                  decoration: inputDecoration.copyWith(labelText: 'Prix'),
+                  validator: (v) => v!.isEmpty ? 'Champ requis' : null,
+                ),
+                const SizedBox(height: 14),
+                DropdownButtonFormField<int>(
+                  initialValue: categoryId,
+                  items: categories
+                      .map(
+                        (c) => DropdownMenuItem<int>(
+                          value: c['id'] as int,
+                          child: Text(
+                            c['name'] as String,
+                            style: GoogleFonts.poppins(),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  decoration: inputDecoration.copyWith(labelText: 'Catégorie'),
+                  onChanged: (v) => setState(() => categoryId = v),
+                  validator: (v) => v == null ? 'Choisir une catégorie' : null,
+                ),
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: pickImage,
+                  child: Container(
+                    height: 160,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.deepOrange),
+                      color: Colors.orange[50],
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black12,
+                          blurRadius: 6,
+                          offset: Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: imageBytes == null
+                        ? Center(
+                            child: Text(
+                              'Choisir une image',
+                              style: GoogleFonts.poppins(
+                                color: Colors.deepOrange,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          )
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: Image.memory(imageBytes!, fit: BoxFit.cover),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: loading ? null : submit,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepOrange,
+                      padding: const EdgeInsets.symmetric(vertical: 18),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      shadowColor: Colors.deepOrangeAccent,
+                      elevation: 6,
+                    ),
+                    child: loading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : Text(
+                            'Créer',
+                            style: GoogleFonts.poppins(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

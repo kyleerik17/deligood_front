@@ -1,19 +1,14 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:deligood/features/pages/panier_page.dart';
+import 'package:deligood/core/network/api.dart';
+import 'package:deligood/core/api/menu_service.dart';
+import 'package:deligood/core/styles/app_theme.dart';
+import 'package:deligood/features/orders/screens/cart_page.dart';
+import 'package:deligood/widgets/premium_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:gap/gap.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
-import 'package:gap/gap.dart';
-import 'package:google_fonts/google_fonts.dart';
-
-import '../../../core/api/menu_service.dart';
-
-// 🎨 COLORS
-const kOrange = Color(0xFFFF6B35);
-const kBg = Color(0xFFF7F3EF);
-const kTextPrimary = Color(0xFF1A1A1A);
-const kTextSecondary = Colors.black54;
 
 class Restopage extends StatefulWidget {
   final Map<String, dynamic> restaurant;
@@ -31,14 +26,14 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
   bool sending = false;
   String? token;
 
-  late AnimationController _anim;
+  late final AnimationController _anim;
 
   @override
   void initState() {
     super.initState();
     _anim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 700),
+      duration: const Duration(milliseconds: 650),
     );
     _initAuth();
   }
@@ -55,39 +50,74 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
     await _fetchMenus();
   }
 
+  /// ✅ Version robuste avec logs, parsing sécurisé et gestion d'erreur
   Future<void> _fetchMenus() async {
-    final id = widget.restaurant['id'];
-    debugPrint('🆔 ID restaurant: $id');
+    final rawId = widget.restaurant['id'];
+    debugPrint(
+      '🍽️ Tentative de chargement du menu. Restaurant ID brut: $rawId (${rawId.runtimeType})',
+    );
 
-    // ✅ Utilise MenuService centralisé
-    menus = await MenuService.getMenuItems(id);
+    if (rawId == null) {
+      debugPrint(
+        '⚠️ ID du restaurant manquant. Vérifie les données passées à Restopage.',
+      );
+      if (mounted) setState(() => loading = false);
+      return;
+    }
 
-    debugPrint('✅ Items reçus: ${menus.length}');
+    // Convertit en int si nécessaire (ex: vient de JSON sous forme de String)
+    final restaurantId = rawId is int ? rawId : int.tryParse(rawId.toString());
+    if (restaurantId == null) {
+      debugPrint('❌ ID du restaurant invalide après parsing: $rawId');
+      if (mounted) setState(() => loading = false);
+      return;
+    }
 
-    if (!mounted) return;
-    setState(() => loading = false);
-    _anim.forward();
+    try {
+      debugPrint('🌐 Appel MenuService.getMenuItems($restaurantId)');
+      final result = await MenuService.getMenuItems(restaurantId);
+
+      if (!mounted) return;
+
+      // Sécurité : garantit que c'est bien une liste de Map
+      menus = result.map((e) => Map<String, dynamic>.from(e)).toList();
+
+      debugPrint('✅ ${menus.length} plat(s) reçu(s) pour ID $restaurantId');
+
+      setState(() => loading = false);
+      if (menus.isNotEmpty) {
+        _anim.forward(from: 0);
+      }
+    } catch (e, st) {
+      debugPrint('❌ Erreur fetchMenus: $e\n$st');
+      if (mounted) {
+        setState(() {
+          loading = false;
+          menus = [];
+        });
+      }
+    }
   }
-
-  // ─── PANIER ───
 
   void _addToCart(Map<String, dynamic> item) {
     setState(() {
       final idx = cart.indexWhere((e) => e['id'] == item['id']);
       if (idx != -1) {
-        // Incrémenter la quantité si déjà dans le panier
         cart[idx]['quantity'] = (cart[idx]['quantity'] as int) + 1;
       } else {
         cart.add({
           'id': item['id'],
           'name': item['name'],
-          'price': item['price'],
+          'price': _priceOf(item),
           'image': item['image'],
           'quantity': 1,
         });
       }
     });
-    _showSnackBar('${item['name']} ajouté au panier', isError: false);
+    _showSnackBar(
+      '${item['name'] ?? 'Produit'} ajouté au panier',
+      isError: false,
+    );
   }
 
   void _removeFromCart(Map<String, dynamic> item) {
@@ -105,23 +135,31 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
 
   int _quantityInCart(Map<String, dynamic> item) {
     final idx = cart.indexWhere((e) => e['id'] == item['id']);
-    if (idx == -1) return 0;
-    return cart[idx]['quantity'] as int;
+    return idx == -1 ? 0 : cart[idx]['quantity'] as int;
   }
 
-  double get totalPrice =>
-      cart.fold(0.0, (sum, item) => sum + (item['price'] * item['quantity']));
+  double _priceOf(Map<String, dynamic> item) {
+    final value = item['price'];
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  double get totalPrice => cart.fold(
+    0.0,
+    (sum, item) => sum + (_priceOf(item) * (item['quantity'] as int)),
+  );
 
   int get totalItems =>
       cart.fold(0, (sum, item) => sum + (item['quantity'] as int));
 
-  // ─── ENVOI PANIER ───
-
   Future<void> _sendCart() async {
     if (sending) return;
 
-    if (token == null) {
-      _showSnackBar('Non connecté. Veuillez vous reconnecter.', isError: true);
+    final prefs = await SharedPreferences.getInstance();
+    final freshToken = prefs.getString('access_token');
+
+    if (freshToken == null || freshToken.isEmpty) {
+      _showSnackBar('Connectez-vous pour commander.', isError: true);
       return;
     }
     if (cart.isEmpty) {
@@ -131,47 +169,41 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
 
     setState(() => sending = true);
 
-    bool success = true;
+    try {
+      final snapshot = List<Map<String, dynamic>>.from(cart);
+      var allOk = true;
 
-    for (final item in cart) {
-      try {
-        final res = await _postCartItem(
+      for (final item in snapshot) {
+        final ok = await _postCartItem(
           menuItemId: item['id'] as int,
           quantity: item['quantity'] as int,
         );
-        if (!res) success = false;
-      } catch (e) {
-        debugPrint('❌ sendCart item error: $e');
-        success = false;
+        if (!ok) {
+          allOk = false;
+          break;
+        }
       }
-    }
 
-    if (!mounted) return;
-    setState(() => sending = false);
-
-    if (success) {
-      setState(() => cart.clear());
-      _showSnackBar('Panier envoyé avec succès ✅', isError: false);
-
-      await Future.delayed(const Duration(milliseconds: 600));
       if (!mounted) return;
+      setState(() => sending = false);
 
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const PanierPage(),
-          transitionsBuilder: (_, animation, __, child) => SlideTransition(
-            position: Tween(
-              begin: const Offset(1, 0),
-              end: Offset.zero,
-            ).chain(CurveTween(curve: Curves.easeInOut)).animate(animation),
-            child: child,
-          ),
-          transitionDuration: const Duration(milliseconds: 500),
-        ),
-      );
-    } else {
-      _showSnackBar("Erreur lors de l'envoi. Réessayez.", isError: true);
+      if (allOk) {
+        setState(() => cart.clear());
+        _showSnackBar('Panier envoyé avec succès', isError: false);
+        await Future.delayed(const Duration(milliseconds: 550));
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const PanierPage()),
+        );
+      } else {
+        _showSnackBar('Une erreur est survenue, réessayez.', isError: true);
+      }
+    } catch (e) {
+      debugPrint('send cart error: $e');
+      if (!mounted) return;
+      setState(() => sending = false);
+      _showSnackBar('Erreur réseau.', isError: true);
     }
   }
 
@@ -179,34 +211,25 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
     required int menuItemId,
     required int quantity,
   }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final freshToken = prefs.getString('access_token');
+    if (freshToken == null || freshToken.isEmpty) return false;
+
     try {
-      final res = await _http().post(
-        Uri.parse(
-            'https://deligood-backend.onrender.com/api/orders/cart/'),
+      final res = await http.post(
+        Uri.parse('${Api.baseUrl}/api/orders/cart/'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Token $token',
+          'Authorization': Api.authHeaderValue(freshToken),
         },
-        body: _json({
-          'menu_item_id': menuItemId,
-          'quantity': quantity,
-        }),
+        body: jsonEncode({'menu_item_id': menuItemId, 'quantity': quantity}),
       );
-
-      debugPrint(
-          '📬 CART ITEM $menuItemId => ${res.statusCode} | ${res.body}');
       return res.statusCode == 200 || res.statusCode == 201;
     } catch (e) {
-      debugPrint('❌ postCartItem error: $e');
+      debugPrint('post cart item error: $e');
       return false;
     }
   }
-
-  // petits helpers pour éviter import http partout
-  http.Client _http() => http.Client();
-  String _json(Map<String, dynamic> data) => jsonEncode(data);
-
-  // ─── SNACKBAR ───
 
   void _showSnackBar(String msg, {required bool isError}) {
     if (!mounted) return;
@@ -221,168 +244,257 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
             ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                msg,
-                style: GoogleFonts.poppins(color: Colors.white, fontSize: 12),
-              ),
+              child: Text(msg, style: AppText.bodySm(color: Colors.white)),
             ),
           ],
         ),
-        backgroundColor: isError ? Colors.redAccent : Colors.green,
-        behavior: SnackBarBehavior.floating,
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: isError ? AppColors.error : AppColors.greenDark,
         margin: EdgeInsets.all(4.w),
-        duration: const Duration(milliseconds: 2500),
       ),
     );
   }
 
-  // ─── BUILD ───
-
   @override
   Widget build(BuildContext context) {
-    final firstName = widget.restaurant['first_name'] ?? '';
-    final lastName = widget.restaurant['last_name'] ?? '';
-    final name = '$firstName $lastName'.trim();
-    final restaurantPhoto =
-        MenuService.fixImageUrl(widget.restaurant['photo']?.toString());
+    final name = _restaurantName(widget.restaurant);
+    final restaurantPhoto = MenuService.fixImageUrl(
+      (widget.restaurant['photo_url'] ?? widget.restaurant['photo'])
+          ?.toString(),
+    );
 
-    return Scaffold(
-      backgroundColor: kBg,
-      body: Stack(
+    return PremiumScaffold(
+      addSafeArea: false,
+      child: Stack(
         children: [
-          Column(
-            children: [
-              // ─── HEADER IMAGE ───
+          CustomScrollView(
+            physics: const BouncingScrollPhysics(),
+            slivers: [
               _buildHeader(name, restaurantPhoto),
-
-              // ─── LISTE MENUS ───
-              Expanded(child: _buildMenuList()),
+              SliverToBoxAdapter(
+                child: _RestaurantSummary(restaurant: widget.restaurant),
+              ),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    AppSpacing.page,
+                    2.h,
+                    AppSpacing.page,
+                    1.h,
+                  ),
+                  child: Row(
+                    children: [
+                      Text('Menu signature', style: AppText.h3()),
+                      const Spacer(),
+                      const PremiumBadge(
+                        label: 'Populaire',
+                        icon: Icons.local_fire_department_rounded,
+                        color: AppColors.orange,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              _buildMenuSliver(),
+              SliverToBoxAdapter(
+                child: SizedBox(height: cart.isNotEmpty ? 15.h : 3.h),
+              ),
             ],
           ),
-
-          // ─── BOTTOM BAR PANIER ───
           if (cart.isNotEmpty) _buildCartBar(),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(String name, String restaurantPhoto) {
-    return Container(
-      height: 30.h,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        image: DecorationImage(
-          image: restaurantPhoto.isNotEmpty
-              ? NetworkImage(restaurantPhoto) as ImageProvider
-              : const AssetImage('assets/images/n.png'),
-          fit: BoxFit.cover,
+  String _restaurantName(Map<String, dynamic> r) {
+    final business = (r['name'] ?? r['restaurant_name'] ?? '')
+        .toString()
+        .trim();
+    if (business.isNotEmpty) return business;
+    final name = '${r['first_name'] ?? ''} ${r['last_name'] ?? ''}'.trim();
+    return name.isEmpty ? 'Restaurant DeliGood' : name;
+  }
+
+  SliverAppBar _buildHeader(String name, String restaurantPhoto) {
+    return SliverAppBar(
+      expandedHeight: 34.h,
+      pinned: true,
+      stretch: true,
+      backgroundColor: AppColors.surface,
+      leading: Padding(
+        padding: EdgeInsets.only(left: 3.w),
+        child: PremiumIconButton(
+          icon: Icons.arrow_back_ios_new_rounded,
+          onTap: () => Navigator.pop(context),
         ),
       ),
-      child: Container(
-        padding: EdgeInsets.all(4.w),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              Colors.black.withOpacity(0.60),
-              Colors.transparent,
-            ],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Bouton retour
-              GestureDetector(
-                onTap: () => Navigator.pop(context),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.20),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.arrow_back_ios_new,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                name.isEmpty ? 'Restaurant' : name,
-                style: GoogleFonts.playfairDisplay(
-                  color: Colors.white,
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              Gap(0.5.h),
-              if (widget.restaurant['locality'] != null)
-                Row(
-                  children: [
-                    const Icon(
-                      Icons.location_on_rounded,
-                      color: Colors.white70,
-                      size: 14,
-                    ),
-                    SizedBox(width: 1.w),
-                    Text(
-                      '${widget.restaurant['locality']}',
-                      style: GoogleFonts.poppins(
-                        color: Colors.white70,
-                        fontSize: 10.sp,
-                      ),
-                    ),
+      actions: [
+        PremiumIconButton(icon: Icons.favorite_border_rounded, onTap: () {}),
+        SizedBox(width: 3.w),
+      ],
+      flexibleSpace: FlexibleSpaceBar(
+        background: Stack(
+          fit: StackFit.expand,
+          children: [
+            restaurantPhoto.isNotEmpty
+                ? Image.network(
+                    restaurantPhoto,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _heroFallback(),
+                  )
+                : _heroFallback(),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: .15),
+                    Colors.black.withValues(alpha: .15),
+                    Colors.black.withValues(alpha: .78),
                   ],
                 ),
-              Gap(1.h),
-            ],
-          ),
+              ),
+            ),
+            Positioned(
+              left: AppSpacing.page,
+              right: AppSpacing.page,
+              bottom: 2.5.h,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const PremiumBadge(
+                    label: 'Top resto',
+                    icon: Icons.verified_rounded,
+                    color: AppColors.orange,
+                  ),
+                  Gap(1.h),
+                  Text(
+                    name,
+                    style: AppText.h1(color: Colors.white),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Gap(.8.h),
+                  Text(
+                    'Cuisine fraiche - livraison rapide - suivi en direct',
+                    style: AppText.bodySm(
+                      color: Colors.white.withValues(alpha: .78),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildMenuList() {
-    if (loading) {
-      return const Center(
-        child: CircularProgressIndicator(color: kOrange),
-      );
-    }
+  Widget _heroFallback() {
+    return Container(
+      decoration: const BoxDecoration(gradient: AppColors.gradientOrange),
+      child: Center(
+        child: Image.asset(
+          'assets/images/n.png',
+          height: 13.h,
+          fit: BoxFit.contain,
+        ),
+      ),
+    );
+  }
 
-    if (menus.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.no_meals_rounded, size: 52, color: Colors.grey.shade300),
-            Gap(2.h),
-            Text(
-              'Aucun plat disponible',
-              style: GoogleFonts.poppins(color: kTextSecondary),
-            ),
-          ],
+  Widget _buildMenuSliver() {
+    if (loading) {
+      return const SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.orange),
         ),
       );
     }
 
-    return ListView.builder(
-      padding: EdgeInsets.fromLTRB(
-        4.w,
-        2.h,
-        4.w,
-        cart.isNotEmpty ? 14.h : 2.h,
-      ),
-      itemCount: menus.length,
-      itemBuilder: (_, i) => FadeTransition(
-        opacity: _anim,
-        child: _card(menus[i]),
+    if (menus.isEmpty) {
+      return SliverFillRemaining(
+        hasScrollBody: false,
+        child: Center(
+          child: PremiumCard(
+            padding: EdgeInsets.all(6.w),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.no_meals_rounded,
+                  size: 52,
+                  color: AppColors.textMuted,
+                ),
+                Gap(1.5.h),
+                Text('Aucun plat disponible', style: AppText.h3()),
+                Gap(.8.h),
+                Text(
+                  'Ce restaurant actualise son menu\nou la connexion a échoué.',
+                  style: AppText.body(),
+                  textAlign: TextAlign.center,
+                ),
+                Gap(2.h),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() => loading = true);
+                    _fetchMenus();
+                  },
+                  icon: const Icon(
+                    Icons.refresh,
+                    color: Colors.white,
+                    size: 18,
+                  ),
+                  label: const Text('Réessayer'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.orange,
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: 5.w,
+                      vertical: 1.4.h,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return SliverPadding(
+      padding: EdgeInsets.symmetric(horizontal: AppSpacing.page),
+      sliver: SliverList.separated(
+        itemCount: menus.length,
+        separatorBuilder: (_, __) => Gap(1.4.h),
+        itemBuilder: (_, i) {
+          final animation = CurvedAnimation(
+            parent: _anim,
+            curve: Interval(
+              (i * .05).clamp(0.0, .72),
+              1,
+              curve: Curves.easeOutCubic,
+            ),
+          );
+          return FadeTransition(
+            opacity: animation,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0, .04),
+                end: Offset.zero,
+              ).animate(animation),
+              child: _MenuCard(
+                item: menus[i],
+                qty: _quantityInCart(menus[i]),
+                price: _priceOf(menus[i]),
+                onAdd: () => _addToCart(menus[i]),
+                onRemove: () => _removeFromCart(menus[i]),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -392,238 +504,283 @@ class _RestopageState extends State<Restopage> with TickerProviderStateMixin {
       bottom: 0,
       left: 0,
       right: 0,
-      child: Container(
-        padding: EdgeInsets.fromLTRB(5.w, 2.h, 5.w, 3.h),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 20,
-            ),
-          ],
+      child: SafeArea(
+        top: false,
+        child: Container(
+          margin: EdgeInsets.fromLTRB(AppSpacing.page, 0, AppSpacing.page, 1.h),
+          padding: EdgeInsets.all(3.w),
+          decoration: BoxDecoration(
+            gradient: AppColors.gradientDark,
+            borderRadius: AppSpacing.xlRadius,
+            boxShadow: AppShadows.raised,
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 11.w,
+                height: 11.w,
+                decoration: const BoxDecoration(
+                  gradient: AppColors.gradientOrange,
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Text(
+                    '$totalItems',
+                    style: AppText.label(color: Colors.white),
+                  ),
+                ),
+              ),
+              SizedBox(width: 3.w),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Votre panier',
+                      style: AppText.bodySm(color: Colors.white70),
+                    ),
+                    Text(
+                      '${totalPrice.toStringAsFixed(0)} FCFA',
+                      style: AppText.h3(color: Colors.white),
+                    ),
+                  ],
+                ),
+              ),
+              ElevatedButton(
+                onPressed: sending ? null : _sendCart,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.white,
+                  foregroundColor: AppColors.textPrimary,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: 5.w,
+                    vertical: 1.55.h,
+                  ),
+                ),
+                child: sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2.2),
+                      )
+                    : Text('Commander', style: AppText.label()),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+}
+
+class _RestaurantSummary extends StatelessWidget {
+  final Map<String, dynamic> restaurant;
+
+  const _RestaurantSummary({required this.restaurant});
+
+  @override
+  Widget build(BuildContext context) {
+    final locality = (restaurant['locality'] ?? 'Autour de vous').toString();
+    return Padding(
+      padding: EdgeInsets.fromLTRB(AppSpacing.page, 2.h, AppSpacing.page, 0),
+      child: PremiumCard(
         child: Row(
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '$totalItems article${totalItems > 1 ? 's' : ''}',
-                    style: GoogleFonts.poppins(
-                      color: kTextSecondary,
-                      fontSize: 10.sp,
-                    ),
-                  ),
-                  Text(
-                    '${totalPrice.toStringAsFixed(0)} FCFA',
-                    style: GoogleFonts.playfairDisplay(
-                      fontSize: 16.sp,
-                      fontWeight: FontWeight.bold,
-                      color: kTextPrimary,
-                    ),
-                  ),
-                ],
-              ),
+            const PremiumBadge(
+              label: '4.8',
+              icon: Icons.star_rounded,
+              color: AppColors.gold,
             ),
-            ElevatedButton(
-              onPressed: sending ? null : _sendCart,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: kOrange,
-                disabledBackgroundColor: kOrange.withOpacity(0.5),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                padding: EdgeInsets.symmetric(
-                  horizontal: 6.w,
-                  vertical: 1.5.h,
-                ),
-                elevation: 0,
+            SizedBox(width: 2.w),
+            const PremiumBadge(
+              label: '25-35 min',
+              icon: Icons.schedule_rounded,
+            ),
+            SizedBox(width: 2.w),
+            Expanded(
+              child: Text(
+                locality,
+                style: AppText.bodySm(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
               ),
-              child: sending
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.shopping_cart_rounded,
-                            color: Colors.white, size: 18),
-                        SizedBox(width: 2.w),
-                        Text(
-                          'Commander',
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
-                    ),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  // ─── CARD PLAT ───
+class _MenuCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final int qty;
+  final double price;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
 
-  Widget _card(Map<String, dynamic> m) {
-    final qty = _quantityInCart(m);
-    final imageUrl = m['image']?.toString() ?? '';
+  const _MenuCard({
+    required this.item,
+    required this.qty,
+    required this.price,
+    required this.onAdd,
+    required this.onRemove,
+  });
 
-    return Container(
-      margin: EdgeInsets.only(bottom: 2.h),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-          ),
-        ],
-      ),
+  @override
+  Widget build(BuildContext context) {
+    final imageUrl = MenuService.fixImageUrl(item['image']?.toString());
+    final name = (item['name'] ?? 'Produit').toString();
+    final description = (item['description'] ?? '').toString();
+
+    return PremiumCard(
+      padding: EdgeInsets.all(3.w),
       child: Row(
         children: [
-          // 🖼 Image
           ClipRRect(
-            borderRadius: const BorderRadius.horizontal(
-              left: Radius.circular(18),
-            ),
+            borderRadius: AppSpacing.lgRadius,
             child: imageUrl.isNotEmpty
                 ? Image.network(
                     imageUrl,
-                    width: 22.w,
-                    height: 10.h,
+                    width: 25.w,
+                    height: 12.h,
                     fit: BoxFit.cover,
-                    loadingBuilder: (_, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      return _imagePlaceholder(isLoading: true);
-                    },
                     errorBuilder: (_, __, ___) => _imagePlaceholder(),
                   )
                 : _imagePlaceholder(),
           ),
-
-          // Infos
+          SizedBox(width: 3.5.w),
           Expanded(
-            child: Padding(
-              padding: EdgeInsets.all(3.w),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: AppText.h4(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (description.isNotEmpty) ...[
+                  Gap(.5.h),
                   Text(
-                    m['name'] ?? 'Produit',
-                    style: GoogleFonts.poppins(
-                      fontWeight: FontWeight.bold,
-                      color: kTextPrimary,
-                      fontSize: 11.sp,
-                    ),
+                    description,
+                    style: AppText.bodySm(),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if ((m['description'] ?? '').toString().isNotEmpty) ...[
-                    Gap(0.3.h),
-                    Text(
-                      m['description'],
-                      style: GoogleFonts.poppins(
-                        color: kTextSecondary,
-                        fontSize: 9.sp,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                  Gap(0.5.h),
-                  Text(
-                    '${(m['price'] as double).toStringAsFixed(0)} FCFA',
-                    style: GoogleFonts.poppins(
-                      color: kOrange,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 11.sp,
-                    ),
-                  ),
                 ],
-              ),
-            ),
-          ),
-
-          // Contrôle quantité
-          Padding(
-            padding: EdgeInsets.only(right: 3.w),
-            child: qty == 0
-                ? GestureDetector(
-                    onTap: () => _addToCart(m),
-                    child: Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: kOrange.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.add, color: kOrange),
+                Gap(1.h),
+                Row(
+                  children: [
+                    Text(
+                      '${price.toStringAsFixed(0)} FCFA',
+                      style: AppText.price(),
                     ),
-                  )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _qtyBtn(
-                          icon: Icons.remove,
-                          onTap: () => _removeFromCart(m)),
-                      Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 2.w),
-                        child: Text(
-                          '$qty',
-                          style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.bold,
-                            color: kTextPrimary,
-                            fontSize: 13.sp,
+                    const Spacer(),
+                    qty == 0
+                        ? _AddButton(onTap: onAdd)
+                        : _QtyStepper(
+                            qty: qty,
+                            onAdd: onAdd,
+                            onRemove: onRemove,
                           ),
-                        ),
-                      ),
-                      _qtyBtn(
-                          icon: Icons.add, onTap: () => _addToCart(m)),
-                    ],
-                  ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _imagePlaceholder({bool isLoading = false}) {
+  Widget _imagePlaceholder() {
     return Container(
-      width: 22.w,
-      height: 10.h,
-      color: Colors.grey.shade100,
-      child: Center(
-        child: isLoading
-            ? CircularProgressIndicator(color: kOrange, strokeWidth: 2)
-            : Image.asset(
-                'assets/images/n.png',
-                fit: BoxFit.cover,
-              ),
+      width: 25.w,
+      height: 12.h,
+      decoration: BoxDecoration(
+        gradient: AppColors.gradientOrange,
+        borderRadius: AppSpacing.lgRadius,
+      ),
+      child: Center(child: Image.asset('assets/images/n.png', height: 7.h)),
+    );
+  }
+}
+
+class _AddButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _AddButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: AppSpacing.pillRadius,
+      child: Container(
+        padding: EdgeInsets.symmetric(horizontal: 3.2.w, vertical: 1.h),
+        decoration: const BoxDecoration(
+          gradient: AppColors.gradientOrange,
+          borderRadius: BorderRadius.all(Radius.circular(999)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.add_rounded, color: Colors.white, size: 16),
+            SizedBox(width: 1.w),
+            Text('Ajouter', style: AppText.label(color: Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QtyStepper extends StatelessWidget {
+  final int qty;
+  final VoidCallback onAdd;
+  final VoidCallback onRemove;
+
+  const _QtyStepper({
+    required this.qty,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.all(.6.w),
+      decoration: BoxDecoration(
+        color: AppColors.orangeSoft.withValues(alpha: .55),
+        borderRadius: AppSpacing.pillRadius,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _roundIcon(Icons.remove_rounded, onRemove),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 2.2.w),
+            child: Text('$qty', style: AppText.label()),
+          ),
+          _roundIcon(Icons.add_rounded, onAdd),
+        ],
       ),
     );
   }
 
-  Widget _qtyBtn({required IconData icon, required VoidCallback onTap}) {
-    return GestureDetector(
+  Widget _roundIcon(IconData icon, VoidCallback onTap) {
+    return InkWell(
       onTap: onTap,
+      borderRadius: AppSpacing.pillRadius,
       child: Container(
-        padding: const EdgeInsets.all(6),
-        decoration: BoxDecoration(
-          color: kOrange.withOpacity(0.10),
+        padding: EdgeInsets.all(1.4.w),
+        decoration: const BoxDecoration(
+          color: AppColors.white,
           shape: BoxShape.circle,
         ),
-        child: Icon(icon, color: kOrange, size: 16),
+        child: Icon(icon, color: AppColors.orange, size: 15),
       ),
     );
   }

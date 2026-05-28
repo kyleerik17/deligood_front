@@ -1,3 +1,5 @@
+import 'package:deligood/core/network/api.dart';
+
 class MenuItem {
   final int id; // ajouté
   final String name;
@@ -19,7 +21,9 @@ class MenuItem {
     return MenuItem(
       id: json['id'], // récupéré depuis l'API
       name: json['name'] ?? '',
-      imageUrl: json['image'] ?? 'assets/images/n.png',
+      imageUrl: Api.resolveMediaUrl(
+        (json['image_url'] ?? json['image'])?.toString(),
+      ),
       price: json['price'].toString(),
       category: json['category_name'],
       description: json['description'],

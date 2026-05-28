@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/foundation.dart';
+import 'package:deligood/core/network/api.dart';
 
 /// ===== SERVICE CENTRAL WS + JWT =====
 class WebSocketManager {
@@ -44,7 +45,7 @@ class WebSocketManager {
       }
 
       // ⚠️ Remplace l'IP si tu es sur un vrai device
-      _wsUrl = 'ws://127.0.0.1:8000/ws/orders/?token=$_token';
+      _wsUrl = '${Api.wsBaseUrl}/ws/orders/?token=$_token';
 
       _messageController ??= StreamController<Map<String, dynamic>>.broadcast();
 
@@ -170,7 +171,8 @@ class WebSocketManager {
 
 /// ===== TRACKING GPS =====
 class LocationTrackingManager {
-  static final LocationTrackingManager _instance = LocationTrackingManager._internal();
+  static final LocationTrackingManager _instance =
+      LocationTrackingManager._internal();
   factory LocationTrackingManager() => _instance;
   LocationTrackingManager._internal();
 
@@ -191,7 +193,7 @@ class LocationTrackingManager {
     }
 
     _locationController ??= StreamController<Map<String, dynamic>>.broadcast();
-    final wsUrl = 'ws://127.0.0.1:8000/ws/tracking/$orderId/?token=$token';
+    final wsUrl = '${Api.wsBaseUrl}/ws/tracking/$orderId/?token=$token';
 
     try {
       _channel = WebSocketChannel.connect(Uri.parse(wsUrl));
@@ -229,12 +231,14 @@ class LocationTrackingManager {
 
   void updateLocation(double lat, double lng) {
     if (_isConnected && _channel != null) {
-      _channel!.sink.add(json.encode({
-        'type': 'update_location',
-        'latitude': lat,
-        'longitude': lng,
-        'timestamp': DateTime.now().toIso8601String(),
-      }));
+      _channel!.sink.add(
+        json.encode({
+          'type': 'update_location',
+          'latitude': lat,
+          'longitude': lng,
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
     }
   }
 
@@ -268,6 +272,7 @@ class WebSocketService {
     _controller.add(data as Map<String, dynamic>);
   }
 }
+
 class LocationTrackingService {
   final _controller = StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get locationStream => _controller.stream;

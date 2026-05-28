@@ -1,24 +1,15 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
-import 'package:deligood/core/api/profile_api.dart';
-import 'package:deligood/core/utils/image_utils.dart';
-import 'package:flutter/foundation.dart';
+import 'package:deligood/core/network/api.dart';
+import 'package:deligood/core/styles/app_theme.dart';
+import 'package:deligood/features/auth/widgets/logout.dart';
+import 'package:deligood/features/pages/info_perso.dart';
+import 'package:deligood/features/pages/wallet_page.dart';
+import 'package:deligood/widgets/premium_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sizer/sizer.dart';
-import 'package:google_fonts/google_fonts.dart';
-
-import 'package:deligood/features/pages/wallet_page.dart';
-import 'package:deligood/features/pages/info_perso.dart';
-import 'package:deligood/features/auth/widgets/logout.dart';
-
-const kOrange = Color(0xFFFF6B35);
-const kTeal = Color(0xFF00CCBC);
-const kBg = Color(0xFFF7F3EF);
-const kWhite = Colors.white;
-const kTextPrimary = Color(0xFF1A1A1A);
-const kTextSecondary = Color(0xFF757575);
-const kError = Color(0xFFFF5A5F);
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -27,127 +18,54 @@ class ProfilePage extends StatefulWidget {
   State<ProfilePage> createState() => _ProfilePageState();
 }
 
-class _ProfilePageState extends State<ProfilePage>
-    with TickerProviderStateMixin {
+class _ProfilePageState extends State<ProfilePage> {
   String firstName = '';
   String lastName = '';
   String phoneNumber = '';
   String userType = '';
-  String email = '';
   String initials = '?';
-
   Uint8List? avatarBytes;
-  bool isLoading = true;
-
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-    _fadeAnim = CurvedAnimation(
-      parent: _fadeController,
-      curve: Curves.easeOut,
-    );
-    _init();
+    _loadUser();
+    _fetchProfileFromApi();
   }
-
-  Future<void> _init() async {
-    await _loadUser();
-    await _fetchProfile();
-    if (mounted) _fadeController.forward(); // ✅ FIX — guard contre dispose
-  }
-
-  @override
-  void dispose() {
-    _fadeController.dispose();
-    super.dispose();
-  }
-
-  // ================= DATA =================
 
   Future<void> _loadUser() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
+    final avatarBase64 = prefs.getString('avatar_base64');
 
-      final f = prefs.getString('first_name') ?? '';
-      final l = prefs.getString('last_name') ?? '';
-
-      if (!mounted) return;
-      setState(() {
-        firstName   = f;
-        lastName    = l;
-        phoneNumber = prefs.getString('phone_number') ?? '';
-        email       = prefs.getString('email') ?? '';
-        userType    = prefs.getString('user_type') ?? '';
-        initials    = _buildInitials(f, l);
-
-        final avatarBase64 = prefs.getString('avatar_base64');
-        if (avatarBase64 != null && avatarBase64.isNotEmpty) {
-          try {
-            avatarBytes = base64Decode(avatarBase64);
-          } catch (_) {}
-        }
-      });
-    } catch (e) {
-      debugPrint('❌ _loadUser error: $e');
-    }
+    setState(() {
+      firstName = prefs.getString('first_name') ?? '';
+      lastName = prefs.getString('last_name') ?? '';
+      phoneNumber = prefs.getString('phone_number') ?? '';
+      userType = prefs.getString('user_type') ?? '';
+      initials = _buildInitials(firstName, lastName);
+      if (avatarBase64 != null) {
+        avatarBytes = base64Decode(avatarBase64);
+      }
+    });
   }
 
-  Future<void> _fetchProfile() async {
+  Future<void> _fetchProfileFromApi() async {
     try {
-      final response = await ProfileApi.fetchProfile();
-
-      if (response.isEmpty) {
-        debugPrint('⚠️ API vide, on garde le cache local');
-        if (mounted) setState(() => isLoading = false);
-        return;
-      }
-
-      final data = response['data'] as Map<String, dynamic>?;
-
-      if (data == null) {
-        debugPrint('⚠️ Clé "data" absente dans la réponse API');
-        if (mounted) setState(() => isLoading = false);
-        return;
-      }
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('first_name',   data['first_name']   ?? firstName);
-      await prefs.setString('last_name',    data['last_name']    ?? lastName);
-      await prefs.setString('phone_number', data['phone_number'] ?? phoneNumber);
-      await prefs.setString('user_type',    data['user_type']    ?? userType);
-
-      final f = (data['first_name'] as String?) ?? firstName;
-      final l = (data['last_name']  as String?) ?? lastName;
-
+      final data = await ProfileApi.fetchProfile();
       if (!mounted) return;
+
       setState(() {
-        firstName   = f;
-        lastName    = l;
-        phoneNumber = (data['phone_number'] as String?) ?? phoneNumber;
-        userType    = (data['user_type']    as String?) ?? userType;
-        initials    = _buildInitials(f, l);
-
-        final photoUrl = data['photo_url'] as String?;
-        if (photoUrl != null && photoUrl.isNotEmpty) {
-          // photo_url est une URL réseau — utilise Image.network(photoUrl) si besoin
+        firstName = data['first_name']?.toString() ?? '';
+        lastName = data['last_name']?.toString() ?? '';
+        phoneNumber = data['phone_number']?.toString() ?? '';
+        userType = data['user_type']?.toString() ?? '';
+        initials = _buildInitials(firstName, lastName);
+        if (data['avatar_base64'] != null) {
+          avatarBytes = ProfileApi.decodeAvatar(data['avatar_base64']);
         }
-
-        final avatar = prefs.getString('avatar_base64');
-        avatarBytes = (avatar != null
-            ? ImageUtils.decodeBase64Image(avatar)
-            : null) ?? avatarBytes;
-
-        isLoading = false;
       });
     } catch (e) {
-      debugPrint('❌ _fetchProfile error: $e');
-      if (mounted) setState(() => isLoading = false);
+      debugPrint('Profile fetch error: $e');
     }
   }
 
@@ -157,317 +75,198 @@ class _ProfilePageState extends State<ProfilePage>
     return '?';
   }
 
-  bool get showWallet => userType != 'client';
+  bool get showWallet => userType.toLowerCase() != 'client';
 
-  // ================= UI =================
   @override
   Widget build(BuildContext context) {
-    final fullName = "$firstName $lastName".trim();
+    final fullName = '$firstName $lastName'.trim();
+    final role = userType.isEmpty ? 'Compte DeliGood' : userType.toUpperCase();
 
-    return Scaffold(
-      backgroundColor: kBg,
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: kOrange))
-          : FadeTransition(
-              opacity: _fadeAnim,
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                  _header(fullName),
-                  SliverToBoxAdapter(child: _content()),
+    return PremiumScaffold(
+      child: RefreshIndicator(
+        color: AppColors.orange,
+        onRefresh: _fetchProfileFromApi,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.page,
+            1.4.h,
+            AppSpacing.page,
+            13.h,
+          ),
+          children: [
+            PremiumTopBar(
+              eyebrow: 'Compte',
+              title: 'Profil',
+              subtitle: 'Vos informations et preferences DeliGood.',
+              actionIcon: Icons.refresh_rounded,
+              onAction: _fetchProfileFromApi,
+            ),
+            SizedBox(height: 2.h),
+            PremiumCard(
+              padding: EdgeInsets.all(5.w),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 9.w,
+                    backgroundColor: AppColors.orangeSoft,
+                    backgroundImage: avatarBytes != null
+                        ? MemoryImage(avatarBytes!)
+                        : null,
+                    child: avatarBytes == null
+                        ? Text(
+                            initials,
+                            style: AppText.h2(color: AppColors.orange),
+                          )
+                        : null,
+                  ),
+                  SizedBox(width: 4.w),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          fullName.isEmpty ? 'Utilisateur DeliGood' : fullName,
+                          style: AppText.h3(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        SizedBox(height: .6.h),
+                        Text(
+                          phoneNumber.isEmpty
+                              ? 'Telephone non renseigne'
+                              : phoneNumber,
+                          style: AppText.bodySm(),
+                        ),
+                        SizedBox(height: 1.h),
+                        PremiumBadge(
+                          label: role,
+                          icon: Icons.verified_user_rounded,
+                          color: AppColors.greenDark,
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
-    );
-  }
-
-  // ================= HEADER =================
-  Widget _header(String fullName) {
-    return SliverAppBar(
-      expandedHeight: 32.h,
-      pinned: true,
-      backgroundColor: kBg,
-      elevation: 0,
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFFFFF3EC), Color(0xFFF7F3EF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+            SizedBox(height: 2.h),
+            _ProfileAction(
+              icon: Icons.person_rounded,
+              title: 'Modifier le profil',
+              subtitle: 'Nom, telephone, documents et photo',
+              onTap: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const InfoPersoPage()),
+                );
+                await _fetchProfileFromApi();
+              },
             ),
-          ),
-          child: SafeArea(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Stack(
-                  children: [
-                    Container(
-                      width: 26.w,
-                      height: 26.w,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: avatarBytes == null
-                            ? const LinearGradient(
-                                colors: [kOrange, Color(0xFFFF8A50)],
-                              )
-                            : null,
-                        boxShadow: [
-                          BoxShadow(
-                            color: kOrange.withOpacity(0.4),
-                            blurRadius: 25,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: avatarBytes != null
-                          ? ClipOval(
-                              child: Image.memory(
-                                avatarBytes!,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : Center(
-                              child: Text(
-                                initials,
-                                style: GoogleFonts.playfairDisplay(
-                                  fontSize: 22.sp,
-                                  fontWeight: FontWeight.bold,
-                                  color: kWhite,
-                                ),
-                              ),
-                            ),
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: kWhite,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: kOrange, width: 2),
-                        ),
-                        child: const Icon(Icons.edit, size: 14, color: kOrange),
-                      ),
-                    ),
-                  ],
-                ),
-
-                SizedBox(height: 2.h),
-
-                Text(
-                  fullName.isEmpty ? "Utilisateur" : fullName,
-                  style: GoogleFonts.playfairDisplay(
-                    fontSize: 20.sp,
-                    fontWeight: FontWeight.bold,
-                    color: kTextPrimary,
-                  ),
-                ),
-
-                if (phoneNumber.isNotEmpty)
-                  Text(
-                    phoneNumber,
-                    style: GoogleFonts.poppins(
-                      fontSize: 12.sp,
-                      color: kTextSecondary,
-                    ),
-                  ),
-
-                SizedBox(height: 3.h),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ================= CONTENT =================
-  Widget _content() {
-    return Padding(
-      padding: EdgeInsets.all(5.w),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              if (showWallet)
-                Expanded(
-                  child: _quickCard(
-                    icon: Icons.account_balance_wallet_rounded,
-                    label: "Wallet",
-                    color: kTeal,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const WalletPage()),
-                      );
-                    },
-                  ),
-                ),
-              SizedBox(width: 3.w),
-              Expanded(
-                child: _quickCard(
-                  icon: Icons.person_rounded,
-                  label: "Profil",
-                  color: kOrange,
-                  onTap: () async {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const InfoPersoPage()),
-                    );
-                    _init();
-                  },
-                ),
+            if (showWallet)
+              _ProfileAction(
+                icon: Icons.account_balance_wallet_rounded,
+                title: 'Mon solde',
+                subtitle: 'Revenus, retraits et historique',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const WalletPage()),
+                  );
+                },
               ),
-            ],
-          ),
-
-          SizedBox(height: 3.h),
-
-          _menuCard([
-            _menuItem(Icons.notifications, "Notifications"),
-            _menuItem(Icons.language, "Langue", trailing: "Français"),
-          ]),
-
-          SizedBox(height: 2.h),
-
-          _menuCard([
-            _menuItem(Icons.help_outline, "Support"),
-            _menuItem(Icons.chat, "Contact"),
-          ]),
-
-          SizedBox(height: 2.h),
-
-          _menuCard([
-            _menuItem(Icons.description, "Conditions"),
-            _menuItem(Icons.privacy_tip, "Confidentialité"),
-          ]),
-
-          SizedBox(height: 4.h),
-
-          _logoutButton(),
-
-          SizedBox(height: 4.h),
-        ],
-      ),
-    );
-  }
-
-  // ================= COMPONENTS =================
-  Widget _quickCard({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: EdgeInsets.symmetric(vertical: 2.h),
-        decoration: BoxDecoration(
-          color: kWhite,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.15),
-              blurRadius: 15,
+            _ProfileAction(
+              icon: Icons.policy_rounded,
+              title: "Conditions d'utilisation",
+              subtitle: 'Regles de service et responsabilites',
+              onTap: () {},
+            ),
+            _ProfileAction(
+              icon: Icons.privacy_tip_rounded,
+              title: 'Confidentialite',
+              subtitle: 'Donnees personnelles et securite',
+              onTap: () {},
+            ),
+            _ProfileAction(
+              icon: Icons.support_agent_rounded,
+              title: 'Nous contacter',
+              subtitle: 'Support client et assistance',
+              onTap: () {},
+            ),
+            _ProfileAction(
+              icon: Icons.logout_rounded,
+              title: 'Deconnexion',
+              subtitle: 'Fermer la session sur cet appareil',
+              danger: true,
+              onTap: () async {
+                final prefs = await SharedPreferences.getInstance();
+                final orderId = prefs.getInt('last_order_id');
+                await LogoutService.performLogout(context, orderId: orderId);
+              },
             ),
           ],
         ),
-        child: Column(
+      ),
+    );
+  }
+}
+
+class _ProfileAction extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool danger;
+
+  const _ProfileAction({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = danger ? AppColors.error : AppColors.orange;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: 1.2.h),
+      child: PremiumCard(
+        padding: EdgeInsets.all(4.w),
+        onTap: onTap,
+        child: Row(
           children: [
             Container(
-              padding: const EdgeInsets.all(14),
+              width: 11.w,
+              height: 11.w,
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                shape: BoxShape.circle,
+                color: color.withValues(alpha: .10),
+                borderRadius: AppSpacing.mdRadius,
               ),
               child: Icon(icon, color: color),
             ),
-            SizedBox(height: 1.h),
-            Text(label, style: GoogleFonts.poppins()),
+            SizedBox(width: 3.4.w),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: AppText.h4()),
+                  SizedBox(height: .4.h),
+                  Text(
+                    subtitle,
+                    style: AppText.bodySm(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _menuCard(List<Widget> children) {
-    return Container(
-      decoration: BoxDecoration(
-        color: kWhite,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10),
-        ],
-      ),
-      child: Column(children: children),
-    );
-  }
-
-  Widget _menuItem(IconData icon, String title, {String? trailing}) {
-    return ListTile(
-      leading: Icon(icon, color: kTextSecondary),
-      title: Text(title, style: GoogleFonts.poppins()),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (trailing != null)
-            Text(trailing, style: GoogleFonts.poppins(color: kTextSecondary)),
-          const Icon(Icons.chevron_right),
-        ],
-      ),
-    );
-  }
-
-  Widget _logoutButton() {
-    return GestureDetector(
-      onTap: _showLogoutDialog,
-      child: Container(
-        width: double.infinity,
-        padding: EdgeInsets.symmetric(vertical: 2.h),
-        decoration: BoxDecoration(
-          color: kError.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Center(
-          child: Text(
-            "Se déconnecter",
-            style: GoogleFonts.poppins(
-              color: kError,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showLogoutDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text("Déconnexion"),
-        content: const Text("Voulez-vous vraiment vous déconnecter ?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Annuler"),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final prefs = await SharedPreferences.getInstance();
-              final orderId = prefs.getInt('last_order_id');
-              await LogoutService.performLogout(context, orderId: orderId);
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: kError),
-            child: const Text("Oui"),
-          ),
-        ],
       ),
     );
   }

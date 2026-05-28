@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:deligood/features/auth/auth_state.dart';
+import 'package:deligood/features/auth/providers/auth_state.dart';
+import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/restaurant/widgets/commande_detail_page.dart';
 import 'package:deligood/features/restaurant/widgets/commande_resto_model.dart';
 import 'package:flutter/material.dart';
@@ -57,7 +58,7 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     super.dispose();
   }
 
-  String get _baseUrl => 'https://deligood-backend.onrender.com';
+  String get _baseUrl => Api.baseUrl;
 
   // ── Récupère le token depuis AuthState (RAM) ou SharedPrefs (fallback) ──
   Future<String?> _getToken() async {
@@ -72,7 +73,9 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     final prefs = await SharedPreferences.getInstance();
     debugPrint('🗝 CLÉS PREFS → ${prefs.getKeys()}');
     final fromPrefs = prefs.getString('access_token');
-    debugPrint('🔑 TOKEN (PREFS) → ${fromPrefs != null && fromPrefs.isNotEmpty ? "OUI (${fromPrefs.length} chars)" : "NON ❌"}');
+    debugPrint(
+      '🔑 TOKEN (PREFS) → ${fromPrefs != null && fromPrefs.isNotEmpty ? "OUI (${fromPrefs.length} chars)" : "NON ❌"}',
+    );
 
     // ✅ Si trouvé dans prefs, recharge AuthState pour les prochains appels
     if (fromPrefs != null && fromPrefs.isNotEmpty) {
@@ -103,14 +106,16 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     late http.Response response;
 
     try {
-      response = await http.get(url, headers: headers).timeout(
-        const Duration(seconds: 30),
-        onTimeout: () {
-          throw Exception(
-            'Délai dépassé — le serveur Render est peut-être en veille. Réessaie dans 30s.',
+      response = await http
+          .get(url, headers: headers)
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              throw Exception(
+                'Délai dépassé — le serveur Render est peut-être en veille. Réessaie dans 30s.',
+              );
+            },
           );
-        },
-      );
     } on TimeoutException catch (e) {
       throw Exception('Timeout: $e');
     } catch (e) {
@@ -118,10 +123,14 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     }
 
     debugPrint('📡 STATUS → ${response.statusCode}');
-    debugPrint('📡 BODY (500 chars) → ${response.body.substring(0, response.body.length.clamp(0, 500))}');
+    debugPrint(
+      '📡 BODY (500 chars) → ${response.body.substring(0, response.body.length.clamp(0, 500))}',
+    );
 
     if (response.body.trim().startsWith('<')) {
-      throw Exception('Le serveur renvoie du HTML. Vérifie l\'URL de l\'endpoint.');
+      throw Exception(
+        'Le serveur renvoie du HTML. Vérifie l\'URL de l\'endpoint.',
+      );
     }
 
     if (response.statusCode == 401) {
@@ -133,7 +142,9 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     }
 
     if (response.statusCode == 403) {
-      throw Exception('Accès refusé (403). Ce compte n\'a pas les droits restaurant.');
+      throw Exception(
+        'Accès refusé (403). Ce compte n\'a pas les droits restaurant.',
+      );
     }
 
     if (response.statusCode == 404) {
@@ -155,7 +166,8 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
     if (decoded is List) {
       data = decoded;
     } else if (decoded is Map) {
-      data = decoded['results'] ??
+      data =
+          decoded['results'] ??
           decoded['data'] ??
           decoded['orders'] ??
           decoded['commandes'] ??
@@ -308,10 +320,10 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
         child: isLoading
             ? _buildLoading()
             : errorMessage.isNotEmpty
-                ? _buildError()
-                : commandes.isEmpty
-                    ? _buildEmpty()
-                    : _buildList(),
+            ? _buildError()
+            : commandes.isEmpty
+            ? _buildEmpty()
+            : _buildList(),
       ),
     );
   }
@@ -334,7 +346,10 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
             SizedBox(height: 2.h),
             Text(
               'Chargement des commandes…',
-              style: GoogleFonts.poppins(fontSize: 12.sp, color: kTextSecondary),
+              style: GoogleFonts.poppins(
+                fontSize: 12.sp,
+                color: kTextSecondary,
+              ),
             ),
           ],
         ),
@@ -368,7 +383,11 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                   color: kError.withOpacity(0.08),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.wifi_off_rounded, color: kError, size: 44),
+                child: const Icon(
+                  Icons.wifi_off_rounded,
+                  color: kError,
+                  size: 44,
+                ),
               ),
               SizedBox(height: 2.h),
               Text(
@@ -405,7 +424,11 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.refresh_rounded, color: kWhite, size: 18),
+                      const Icon(
+                        Icons.refresh_rounded,
+                        color: kWhite,
+                        size: 18,
+                      ),
                       SizedBox(width: 2.w),
                       Text(
                         'Réessayer',
@@ -437,7 +460,11 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
               color: kOrange.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.receipt_long_rounded, color: kOrange, size: 52),
+            child: const Icon(
+              Icons.receipt_long_rounded,
+              color: kOrange,
+              size: 52,
+            ),
           ),
           SizedBox(height: 2.5.h),
           Text(
@@ -540,7 +567,10 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                       decoration: BoxDecoration(
                         color: color.withOpacity(0.12),
                         shape: BoxShape.circle,
-                        border: Border.all(color: color.withOpacity(0.3), width: 1.5),
+                        border: Border.all(
+                          color: color.withOpacity(0.3),
+                          width: 1.5,
+                        ),
                       ),
                       child: Center(
                         child: Text(
@@ -568,7 +598,9 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                           ),
                           SizedBox(height: 0.3.h),
                           Text(
-                            commande.items.isEmpty ? 'Aucun article' : articlesResume,
+                            commande.items.isEmpty
+                                ? 'Aucun article'
+                                : articlesResume,
                             style: GoogleFonts.poppins(
                               fontSize: 10.sp,
                               color: kTextSecondary,
@@ -602,11 +634,17 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 0.7.h),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 3.w,
+                        vertical: 0.7.h,
+                      ),
                       decoration: BoxDecoration(
                         color: color.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: color.withOpacity(0.25), width: 1),
+                        border: Border.all(
+                          color: color.withOpacity(0.25),
+                          width: 1,
+                        ),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -625,7 +663,10 @@ class _CommandeRestoPageState extends State<CommandeRestoPage>
                       ),
                     ),
                     Container(
-                      padding: EdgeInsets.symmetric(horizontal: 3.w, vertical: 0.7.h),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 3.w,
+                        vertical: 0.7.h,
+                      ),
                       decoration: BoxDecoration(
                         color: kOrange.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(20),

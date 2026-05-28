@@ -9,7 +9,9 @@ Future<void> logout(BuildContext context) async {
   await prefs.clear(); // Supprime toutes les données utilisateur
 
   Navigator.of(context).pushAndRemoveUntil(
-    MaterialPageRoute(builder: (_) =>  LoginScreen(onLoginSuccess: (String type) {  },)),
+    MaterialPageRoute(
+      builder: (_) => LoginPage(onLoginSuccess: (String type) {}),
+    ),
     (route) => false,
   );
 }
@@ -61,9 +63,7 @@ Drawer buildAppDrawer(BuildContext context) {
     child: Column(
       children: [
         DrawerHeader(
-          decoration: const BoxDecoration(
-            color: Colors.deepOrange,
-          ),
+          decoration: const BoxDecoration(color: Colors.deepOrange),
           child: Center(
             child: Text(
               "DeliGood",
@@ -84,5 +84,3 @@ Drawer buildAppDrawer(BuildContext context) {
     ),
   );
 }
-
-

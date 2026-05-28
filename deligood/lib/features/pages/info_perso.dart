@@ -1,22 +1,15 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:gap/gap.dart';
 import 'package:sizer/sizer.dart';
-
-// ================== DESIGN SYSTEM ==================
-const kOrange     = Color(0xFFFF6B35);
-const kOrangeDark = Color(0xFFFF5722);
-const kTeal       = Color(0xFF00CCBC);
-const kTealDark   = Color(0xFF00A896);
-const kBg         = Color(0xFFF7F3EF);
-const kCard       = Colors.white;
-const kText       = Color(0xFF1A1A1A);
-const kSubText    = Color(0xFF757575);
-const kError      = Color(0xFFFF5A5F);
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:deligood/core/network/api.dart';
 
 class InfoPersoPage extends StatefulWidget {
   const InfoPersoPage({super.key});
@@ -26,684 +19,492 @@ class InfoPersoPage extends StatefulWidget {
 }
 
 class _InfoPersoPageState extends State<InfoPersoPage>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
+  final TextEditingController _firstNameController = TextEditingController();
+  final TextEditingController _lastNameController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
 
-  final _firstCtrl = TextEditingController();
-  final _lastCtrl  = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  final _emailCtrl = TextEditingController();
+  bool _isModified = false;
+  static String get baseUrl => Api.baseUrl;
 
-  Uint8List? _avatar;
-  Uint8List? _permit;
-  bool _modified = false;
-  bool _loading  = false;
-  String _userType = '';
+  // Avatar
+  Uint8List? _avatarBytes;
+  XFile? _avatarFile;
 
-  final _picker = ImagePicker();
+  // Permit
+  Uint8List? _permitBytes;
+  XFile? _permitFile;
 
-  late AnimationController _entryCtrl;
-  late AnimationController _saveCtrl;
-  late Animation<double>   _entryFade;
-  late Animation<Offset>   _entrySlide;
-  late Animation<double>   _saveFade;
+  String _userType = ""; // pour savoir si c'est livreur
+
+  final ImagePicker _picker = ImagePicker();
+
+  late AnimationController _haloController;
 
   @override
   void initState() {
     super.initState();
 
-    // Entrée page
-    _entryCtrl = AnimationController(
+    _haloController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _entryFade = CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut);
-    _entrySlide = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _entryCtrl, curve: Curves.easeOut));
+      duration: const Duration(seconds: 2),
+    )..repeat(reverse: true);
 
-    // Bouton save
-    _saveCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _saveFade = CurvedAnimation(parent: _saveCtrl, curve: Curves.easeOut);
+    _loadUserInfoFromPrefs();
+    _fetchUserInfoFromBackend();
 
-    _load();
-    _entryCtrl.forward();
+    _firstNameController.addListener(_onFieldChanged);
+    _lastNameController.addListener(_onFieldChanged);
+    _phoneController.addListener(_onFieldChanged);
   }
 
-  @override
-  void dispose() {
-    _entryCtrl.dispose();
-    _saveCtrl.dispose();
-    _firstCtrl.dispose();
-    _lastCtrl.dispose();
-    _phoneCtrl.dispose();
-    _emailCtrl.dispose();
-    super.dispose();
+  void _onFieldChanged() {
+    if (!_isModified) setState(() => _isModified = true);
   }
 
-  // ================== LOAD ==================
-  Future<void> _load() async {
+  Future<void> _loadUserInfoFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
     setState(() {
-      _firstCtrl.text = prefs.getString('first_name')   ?? '';
-      _lastCtrl.text  = prefs.getString('last_name')    ?? '';
-      _phoneCtrl.text = prefs.getString('phone_number') ?? '';
-      _emailCtrl.text = prefs.getString('email')        ?? '';
-      _userType       = prefs.getString('user_type')    ?? '';
+      _firstNameController.text = prefs.getString('first_name') ?? '';
+      _lastNameController.text = prefs.getString('last_name') ?? '';
+      _phoneController.text = prefs.getString('phone_number') ?? '';
+      _userType = prefs.getString('user_type') ?? "";
 
-      final a = prefs.getString('avatar_base64');
-      if (a != null && a.isNotEmpty) {
-        try { _avatar = base64Decode(a); } catch (_) {}
+      // Charger l'avatar depuis prefs si déjà sauvegardé
+      final avatarBase64 = prefs.getString('avatar_base64');
+      if (avatarBase64 != null && avatarBase64.isNotEmpty) {
+        _avatarBytes = base64Decode(avatarBase64);
+      } else {
+        _avatarBytes = null; // pas d'image
       }
+
+      _isModified = false;
     });
   }
 
-  void _mark() {
-    if (!_modified) {
-      setState(() => _modified = true);
-      _saveCtrl.forward();
+  Future<void> _fetchUserInfoFromBackend() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token');
+    if (token == null) return;
+
+    final url = Uri.parse('$baseUrl/api/users/profile/');
+    try {
+      final response = await http.get(
+        url,
+        headers: {'Authorization': Api.authHeaderValue(token)},
+      );
+      print(
+        "DEBUG: fetchUserInfoFromBackend statusCode=${response.statusCode}",
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        final profile = data is Map && data['data'] is Map
+            ? Map<String, dynamic>.from(data['data'])
+            : Map<String, dynamic>.from(data);
+
+        _firstNameController.text = profile['first_name'] ?? '';
+        _lastNameController.text = profile['last_name'] ?? '';
+        _phoneController.text = profile['phone_number'] ?? '';
+        _userType = profile['user_type'] ?? "";
+        print("DEBUG: userType=$_userType");
+
+        // Avatar : récupère depuis API si pas déjà dans prefs
+        final photoUrl = Api.resolveMediaUrl(
+          (profile['photo_url'] ?? profile['photo'])?.toString(),
+        );
+        if (photoUrl.isNotEmpty && _avatarBytes == null) {
+          final bytes = await _fetchImageBytes(photoUrl);
+          if (bytes != null) {
+            _avatarBytes = bytes;
+            await prefs.setString('avatar_base64', base64Encode(bytes));
+            print("DEBUG: Avatar chargé depuis backend");
+          }
+        }
+
+        // Permit uniquement pour livreur
+        if (_userType == "livreur") {
+          final permitUrl = Api.resolveMediaUrl(
+            (profile['permit_photo_url'] ?? profile['permit_photo'])
+                ?.toString(),
+          );
+          if (permitUrl.isNotEmpty) {
+            final bytes = await _fetchImageBytes(permitUrl);
+            if (bytes != null) {
+              _permitBytes = bytes;
+              print("DEBUG: Permit chargé depuis backend");
+            }
+          }
+        }
+
+        setState(() => _isModified = false);
+      }
+    } catch (e) {
+      print("Erreur fetch backend: $e");
     }
   }
 
-  // ================== PICK IMAGE ==================
+  Future<Uint8List?> _fetchImageBytes(String url) async {
+    try {
+      final res = await http.get(Uri.parse(url));
+      if (res.statusCode == 200 && res.bodyBytes.isNotEmpty) {
+        return res.bodyBytes;
+      }
+    } catch (e) {
+      print("Erreur fetch image: $e");
+    }
+    return null;
+  }
+
   Future<void> _pickAvatar() async {
-    final img = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-    );
-    if (img == null) return;
-    final bytes = await img.readAsBytes();
-    setState(() {
-      _avatar   = bytes;
-      _modified = true;
-    });
-    _saveCtrl.forward();
+    final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
+    if (image == null) return;
+
+    if (kIsWeb) {
+      final bytes = await image.readAsBytes();
+      setState(() {
+        _avatarBytes = bytes;
+        _avatarFile = null;
+        _isModified = true;
+      });
+    } else {
+      setState(() {
+        _avatarFile = image;
+        _avatarBytes = null;
+        _isModified = true;
+      });
+    }
   }
 
   Future<void> _pickPermit() async {
-    final img = await _picker.pickImage(
+    final XFile? file = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 80,
-    );
-    if (img == null) return;
-    final bytes = await img.readAsBytes();
-    setState(() {
-      _permit   = bytes;
-      _modified = true;
-    });
-    _saveCtrl.forward();
+    ); // peut changer si PDF
+    if (file == null) return;
+
+    if (kIsWeb) {
+      final bytes = await file.readAsBytes();
+      setState(() {
+        _permitBytes = bytes;
+        _permitFile = null;
+        _isModified = true;
+      });
+    } else {
+      setState(() {
+        _permitFile = file;
+        _permitBytes = null;
+        _isModified = true;
+      });
+    }
   }
 
-  // ================== SAVE ==================
-  Future<void> _save() async {
-    setState(() => _loading = true);
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('first_name',   _firstCtrl.text.trim());
-    await prefs.setString('last_name',    _lastCtrl.text.trim());
-    await prefs.setString('phone_number', _phoneCtrl.text.trim());
-    await prefs.setString('email',        _emailCtrl.text.trim());
-
-    if (_avatar != null) {
-      await prefs.setString('avatar_base64', base64Encode(_avatar!));
+  ImageProvider? _getAvatarImage() {
+    if (_avatarBytes != null) return MemoryImage(_avatarBytes!);
+    if (_avatarFile != null && File(_avatarFile!.path).existsSync()) {
+      return FileImage(File(_avatarFile!.path));
     }
+    return null;
+  }
 
-    await Future.delayed(const Duration(milliseconds: 600));
-
-    if (!mounted) return;
-    setState(() {
-      _loading  = false;
-      _modified = false;
-    });
-    _saveCtrl.reverse();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: kTeal,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        margin: EdgeInsets.symmetric(horizontal: 5.w, vertical: 2.h),
-        content: Row(
-          children: [
-            const Icon(Icons.check_circle_outline, color: Colors.white),
-            SizedBox(width: 2.w),
-            Text(
-              "Profil mis à jour ✨",
-              style: GoogleFonts.poppins(color: Colors.white),
-            ),
-          ],
-        ),
-      ),
-    );
+  ImageProvider? _getPermitImage() {
+    if (_permitBytes != null) return MemoryImage(_permitBytes!);
+    if (_permitFile != null && File(_permitFile!.path).existsSync()) {
+      return FileImage(File(_permitFile!.path));
+    }
+    return null;
   }
 
   String get _initials {
-    final f = _firstCtrl.text;
-    final l = _lastCtrl.text;
+    final f = _firstNameController.text;
+    final l = _lastNameController.text;
     if (f.isNotEmpty && l.isNotEmpty) return '${f[0]}${l[0]}'.toUpperCase();
     if (f.isNotEmpty) return f[0].toUpperCase();
     return '?';
   }
 
-  // ================== BUILD ==================
+  Future<void> _saveUserInfo() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('access_token');
+    if (token == null) return;
+
+    final url = Uri.parse('$baseUrl/api/users/profile/');
+    try {
+      var request = http.MultipartRequest('PATCH', url)
+        ..headers['Authorization'] = Api.authHeaderValue(token)
+        ..fields['first_name'] = _firstNameController.text
+        ..fields['last_name'] = _lastNameController.text
+        ..fields['phone_number'] = _phoneController.text;
+
+      // Avatar
+      if (_avatarBytes != null) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            'photo',
+            _avatarBytes!,
+            filename: 'avatar_${DateTime.now().millisecondsSinceEpoch}.png',
+          ),
+        );
+        print("DEBUG: Avatar ajouté pour upload");
+      } else if (_avatarFile != null) {
+        request.files.add(
+          await http.MultipartFile.fromPath('photo', _avatarFile!.path),
+        );
+        print("DEBUG: Avatar fichier ajouté pour upload");
+      }
+
+      // Permit uniquement si livreur
+      if (_userType == "livreur") {
+        if (_permitBytes != null) {
+          request.files.add(
+            http.MultipartFile.fromBytes(
+              'permit_photo',
+              _permitBytes!,
+              filename: 'permit_${DateTime.now().millisecondsSinceEpoch}.png',
+            ),
+          );
+          print("DEBUG: Permit envoyé depuis bytes");
+        } else if (_permitFile != null) {
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'permit_photo',
+              _permitFile!.path,
+            ),
+          );
+          print("DEBUG: Permit envoyé depuis fichier local");
+        } else {
+          print("DEBUG: Aucun permit à envoyer pour ce livreur");
+        }
+      }
+
+      final response = await request.send();
+      final respStr = await response.stream.bytesToString();
+      print("DEBUG: saveUserInfo response=$respStr");
+
+      if (response.statusCode == 200) {
+        await prefs.setString('first_name', _firstNameController.text);
+        await prefs.setString('last_name', _lastNameController.text);
+        await prefs.setString('phone_number', _phoneController.text);
+        await prefs.setString('user_type', _userType);
+
+        if (_avatarBytes != null) {
+          await prefs.setString('avatar_base64', base64Encode(_avatarBytes!));
+        } else if (_avatarFile != null) {
+          final bytes = await File(_avatarFile!.path).readAsBytes();
+          _avatarBytes = bytes;
+          await prefs.setString('avatar_base64', base64Encode(bytes));
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Infos sauvegardées ✅"),
+            backgroundColor: Colors.green,
+          ),
+        );
+        setState(() => _isModified = false);
+      } else {
+        throw Exception(respStr);
+      }
+    } catch (e) {
+      print("Erreur saveUserInfo: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Erreur sauvegarde ❌ $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _firstNameController.dispose();
+    _lastNameController.dispose();
+    _phoneController.dispose();
+    _haloController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBg,
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          FadeTransition(
-            opacity: _entryFade,
-            child: SlideTransition(
-              position: _entrySlide,
-              child: CustomScrollView(
-                physics: const BouncingScrollPhysics(),
-                slivers: [
-                  _buildAppBar(),
-                  SliverToBoxAdapter(
-                    child: Column(
-                      children: [
-                        _buildAvatarSection(),
-                        SizedBox(height: 1.h),
-                        _buildFormSection(),
-                        if (_userType == 'livreur') ...[
-                          SizedBox(height: 1.h),
-                          _buildPermitSection(),
-                        ],
-                        SizedBox(height: 16.h),
-                      ],
+          Positioned(
+            top: 2.h,
+            left: 4.w,
+            child: GestureDetector(
+              onTap: () => Navigator.pop(context),
+              child: Container(
+                padding: EdgeInsets.all(1.5.h),
+                decoration: BoxDecoration(
+                  color: Colors.deepPurple.withOpacity(0.7),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.deepPurpleAccent.withOpacity(0.6),
+                      blurRadius: 12,
+                      spreadRadius: 1,
+                    ),
+                  ],
+                ),
+                child: Icon(Icons.arrow_back, color: Colors.white, size: 6.w),
+              ),
+            ),
+          ),
+          SingleChildScrollView(
+            padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 8.h),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Avatar
+                Center(
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      AnimatedBuilder(
+                        animation: _haloController,
+                        builder: (_, __) => Container(
+                          width: 28.w + _haloController.value * 10,
+                          height: 28.w + _haloController.value * 10,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.deepPurpleAccent.withOpacity(
+                              0.2 + _haloController.value * 0.3,
+                            ),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _pickAvatar,
+                        child: CircleAvatar(
+                          radius: 14.w,
+                          backgroundColor: Colors.grey[900],
+                          backgroundImage: _getAvatarImage(),
+                          child: _getAvatarImage() == null
+                              ? Text(
+                                  _initials,
+                                  style: TextStyle(
+                                    fontSize: 20.sp,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.deepPurpleAccent,
+                                  ),
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Gap(3.h),
+                Center(
+                  child: Text(
+                    "Parlez-nous de vous",
+                    style: GoogleFonts.poppins(
+                      fontSize: 22.sp,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.deepPurpleAccent,
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-          _buildSaveButton(),
-        ],
-      ),
-    );
-  }
+                ),
+                Gap(3.h),
+                _buildLabel('Prénom *'),
+                _buildTextField(_firstNameController),
+                Gap(2.h),
+                _buildLabel('Nom *'),
+                _buildTextField(_lastNameController),
+                Gap(2.h),
+                _buildLabel('Numéro de téléphone *'),
+                _buildTextField(_phoneController, hint: '+225 05 65 83 83 85'),
+                Gap(2.h),
 
-  // ================== APP BAR ==================
-  Widget _buildAppBar() {
-    return SliverAppBar(
-      expandedHeight: 22.h,
-      pinned: true,
-      elevation: 0,
-      backgroundColor: kOrange,
-      leading: GestureDetector(
-        onTap: () => Navigator.pop(context),
-        child: Container(
-          margin: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
-        ),
-      ),
-      flexibleSpace: FlexibleSpaceBar(
-        background: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [kOrange, kOrangeDark],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-          ),
-          child: Stack(
-            children: [
-              // Bulle décorative haut droite
-              Positioned(
-                top: -4.h,
-                right: -8.w,
-                child: Container(
-                  width: 40.w,
-                  height: 40.w,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.08),
+                // Permit seulement si livreur
+                if (_userType == "livreur") ...[
+                  _buildLabel('Permis / Document'),
+                  ElevatedButton(
+                    onPressed: _pickPermit,
+                    child: Text(
+                      _permitFile != null || _permitBytes != null
+                          ? "Modifier le fichier"
+                          : "Ajouter un fichier",
+                    ),
                   ),
-                ),
-              ),
-              // Bulle décorative bas gauche
-              Positioned(
-                bottom: -2.h,
-                left: -4.w,
-                child: Container(
-                  width: 25.w,
-                  height: 25.w,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.06),
-                  ),
-                ),
-              ),
-              // Titre centré
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: 4.h),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        "Mes informations",
-                        style: GoogleFonts.playfairDisplay(
-                          fontSize: 22.sp,
+                  Gap(2.h),
+                ],
+
+                Gap(4.h),
+                Center(
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    width: 50.w,
+                    height: 6.h,
+                    child: ElevatedButton(
+                      onPressed: _isModified ? _saveUserInfo : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _isModified
+                            ? Colors.deepPurpleAccent
+                            : Colors.grey[700],
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 8,
+                        shadowColor: Colors.deepPurpleAccent,
+                      ),
+                      child: Text(
+                        'Sauvegarder',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16.sp,
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                         ),
                       ),
-                      SizedBox(height: 0.5.h),
-                      Text(
-                        "Gérez votre profil personnel",
-                        style: GoogleFonts.poppins(
-                          fontSize: 11.sp,
-                          color: Colors.white.withOpacity(0.8),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ================== AVATAR ==================
-  Widget _buildAvatarSection() {
-    return Transform.translate(
-      offset: const Offset(0, -30),
-      child: Center(
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            // Anneau décoratif extérieur
-            Container(
-              width: 32.w,
-              height: 32.w,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: kOrange.withOpacity(0.3),
-                  width: 3,
-                ),
-              ),
-            ),
-
-            // Avatar
-            Positioned(
-              top: 0,
-              left: 0,
-              child: GestureDetector(
-                onTap: _pickAvatar,
-                child: Container(
-                  width: 32.w,
-                  height: 32.w,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: _avatar == null
-                        ? const LinearGradient(
-                            colors: [kOrange, Color(0xFFFF8A50)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          )
-                        : null,
-                    boxShadow: [
-                      BoxShadow(
-                        color: kOrange.withOpacity(0.4),
-                        blurRadius: 20,
-                        spreadRadius: 2,
-                        offset: const Offset(0, 6),
-                      ),
-                    ],
-                  ),
-                  child: _avatar != null
-                      ? ClipOval(
-                          child: Image.memory(_avatar!, fit: BoxFit.cover),
-                        )
-                      : Center(
-                          child: Text(
-                            _initials,
-                            style: GoogleFonts.playfairDisplay(
-                              fontSize: 20.sp,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                ),
-              ),
-            ),
-
-            // Bouton caméra
-            Positioned(
-              bottom: 0,
-              right: 0,
-              child: GestureDetector(
-                onTap: _pickAvatar,
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: kCard,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: kOrange, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(Icons.camera_alt, size: 16, color: kOrange),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ================== FORM ==================
-  Widget _buildFormSection() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 5.w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle("Informations personnelles"),
-          SizedBox(height: 1.5.h),
-
-          _buildCard([
-            _buildField(
-              controller: _firstCtrl,
-              label: "Prénom",
-              icon: Icons.person_outline,
-            ),
-            _divider(),
-            _buildField(
-              controller: _lastCtrl,
-              label: "Nom",
-              icon: Icons.badge_outlined,
-            ),
-          ]),
-
-          SizedBox(height: 2.h),
-          _sectionTitle("Coordonnées"),
-          SizedBox(height: 1.5.h),
-
-          _buildCard([
-            _buildField(
-              controller: _phoneCtrl,
-              label: "Téléphone",
-              icon: Icons.phone_outlined,
-              keyboardType: TextInputType.phone,
-            ),
-            _divider(),
-            _buildField(
-              controller: _emailCtrl,
-              label: "Email",
-              icon: Icons.mail_outline,
-              keyboardType: TextInputType.emailAddress,
-            ),
-          ]),
-        ],
-      ),
-    );
-  }
-
-  Widget _sectionTitle(String title) {
-    return Padding(
-      padding: EdgeInsets.only(left: 1.w),
-      child: Row(
-        children: [
-          Container(
-            width: 4,
-            height: 18,
-            decoration: BoxDecoration(
-              color: kOrange,
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
-          SizedBox(width: 2.w),
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 13.sp,
-              fontWeight: FontWeight.w600,
-              color: kText,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCard(List<Widget> children) {
-    return Container(
-      decoration: BoxDecoration(
-        color: kCard,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(children: children),
-    );
-  }
-
-  Widget _buildField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 0.5.h),
-      child: TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        onChanged: (_) => _mark(),
-        style: GoogleFonts.poppins(
-          fontSize: 13.sp,
-          color: kText,
-          fontWeight: FontWeight.w500,
-        ),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: GoogleFonts.poppins(
-            fontSize: 11.sp,
-            color: kSubText,
-          ),
-          prefixIcon: Icon(icon, color: kOrange, size: 20),
-          border: InputBorder.none,
-          enabledBorder: InputBorder.none,
-          focusedBorder: InputBorder.none,
-          contentPadding: EdgeInsets.symmetric(vertical: 1.5.h),
-        ),
-      ),
-    );
-  }
-
-  Widget _divider() {
-    return Divider(
-      height: 1,
-      indent: 14.w,
-      endIndent: 4.w,
-      color: Colors.grey.shade100,
-    );
-  }
-
-  // ================== PERMIS ==================
-  Widget _buildPermitSection() {
-    return Padding(
-      padding: EdgeInsets.symmetric(horizontal: 5.w),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionTitle("Documents"),
-          SizedBox(height: 1.5.h),
-          GestureDetector(
-            onTap: _pickPermit,
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: 4.w,
-                vertical: 2.h,
-              ),
-              decoration: BoxDecoration(
-                color: kCard,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 16,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: kTeal.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.description_outlined, color: kTeal, size: 22),
-                  ),
-                  SizedBox(width: 3.w),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Permis / Document",
-                          style: GoogleFonts.poppins(
-                            fontSize: 13.sp,
-                            fontWeight: FontWeight.w600,
-                            color: kText,
-                          ),
-                        ),
-                        Text(
-                          _permit != null
-                              ? "Document sélectionné ✓"
-                              : "Appuyez pour sélectionner",
-                          style: GoogleFonts.poppins(
-                            fontSize: 10.sp,
-                            color: _permit != null ? kTeal : kSubText,
-                          ),
-                        ),
-                      ],
                     ),
                   ),
-                  Icon(
-                    Icons.chevron_right,
-                    color: kSubText,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ================== SAVE BUTTON ==================
-  Widget _buildSaveButton() {
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: FadeTransition(
-        opacity: _saveFade,
-        child: Container(
-          padding: EdgeInsets.fromLTRB(5.w, 2.h, 5.w, 0),
-          decoration: BoxDecoration(
-            color: kCard,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(24),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 20,
-                offset: const Offset(0, -4),
-              ),
-            ],
-          ),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Indicateur drag
-                Container(
-                  width: 10.w,
-                  height: 4,
-                  margin: EdgeInsets.only(bottom: 2.h),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
                 ),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: 6.h,
-                  child: ElevatedButton(
-                    onPressed: _loading ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: kOrange,
-                      disabledBackgroundColor: kOrange.withOpacity(0.6),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: _loading
-                        ? const SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2.5,
-                            ),
-                          )
-                        : Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.check_rounded, color: Colors.white),
-                              SizedBox(width: 2.w),
-                              Text(
-                                "Enregistrer les modifications",
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13.sp,
-                                ),
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
-
-                SizedBox(height: 1.h),
+                Gap(4.h),
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLabel(String text) => Text(
+    text,
+    style: GoogleFonts.poppins(
+      color: Colors.deepPurpleAccent,
+      fontSize: 16.sp,
+      fontWeight: FontWeight.w500,
+    ),
+  );
+
+  Widget _buildTextField(TextEditingController controller, {String? hint}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      decoration: BoxDecoration(
+        color: Colors.grey[900],
+        borderRadius: BorderRadius.circular(1.h),
+        border: Border.all(color: Colors.deepPurpleAccent, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.deepPurpleAccent.withOpacity(0.4),
+            blurRadius: 6,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        style: const TextStyle(color: Colors.white),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          contentPadding: EdgeInsets.symmetric(
+            horizontal: 3.w,
+            vertical: 1.5.h,
+          ),
+          hintText: hint,
+          hintStyle: TextStyle(color: Colors.grey[500]),
         ),
       ),
     );

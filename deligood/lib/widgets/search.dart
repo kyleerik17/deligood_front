@@ -10,7 +10,8 @@ class SearchBarWidget extends StatelessWidget {
     super.key,
     required this.controller,
     this.onTapIcon,
-    this.onChanged, required String placeholder,
+    this.onChanged,
+    required String placeholder,
   });
 
   @override

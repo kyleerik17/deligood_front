@@ -1,43 +1,25 @@
 import 'package:deligood/features/client/screens/Home_screen.dart';
-import 'package:deligood/features/client/screens/RestaurantPage.dart';
-import 'package:deligood/features/restaurant/screens/commande_resto_page.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:deligood/features/pages/panier_page.dart';
+
+// ================= CLIENT =================
+import 'package:deligood/core/styles/app_theme.dart';
+import 'package:deligood/features/client/screens/client_home_page.dart';
+import 'package:deligood/features/client/screens/RestaurantPage.dart' as client;
+import 'package:deligood/features/orders/screens/cart_page.dart' as orders;
 import 'package:deligood/features/pages/profil_page.dart';
+
+// ================= LIVREUR =================
 import 'package:deligood/features/livreur/screens/pages/Home_livreur.dart';
 import 'package:deligood/features/livreur/screens/pages/historique_liv.dart';
 import 'package:deligood/features/livreur/screens/course_page.dart';
+
+// ================= RESTAURANT =================
 import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
-import 'package:deligood/features/pages/cree_menu_page.dart';
+import 'package:deligood/features/restaurant/screens/commande_resto.dart';
+import 'package:deligood/features/restaurant/screens/create_menu_page.dart';
 
-
-// ================== DESIGN SYSTEM ==================
-const kOrange     = Color(0xFFFF6B35);
-const kOrangeDark = Color(0xFFFF5722);
-const kTeal       = Color(0xFF00CCBC);
-const kBg         = Color(0xFFF7F3EF);
-const kCard       = Colors.white;
-const kText       = Color(0xFF1A1A1A);
-const kSubText    = Color(0xFF757575);
-
-// ================== NAV ITEM MODEL ==================
-class _NavItem {
-  final IconData icon;
-  final IconData activeIcon;
-  final String label;
-
-  const _NavItem({
-    required this.icon,
-    required this.activeIcon,
-    required this.label,
-  });
-}
-
-// ================== WIDGET ==================
 class CustomBottomNavBar extends StatefulWidget {
-  // ✅ Plus de token ici — lu depuis AuthState
-  final String userRole;
+  final String userRole; // client | restaurant | livreur
   final int orderId;
 
   const CustomBottomNavBar({
@@ -50,181 +32,145 @@ class CustomBottomNavBar extends StatefulWidget {
   State<CustomBottomNavBar> createState() => _CustomBottomNavBarState();
 }
 
-class _CustomBottomNavBarState extends State<CustomBottomNavBar>
-    with TickerProviderStateMixin {
-
+class _CustomBottomNavBarState extends State<CustomBottomNavBar> {
   int _currentIndex = 0;
+  CourseModel? selectedCourse;
 
-  late final List<Widget> _pages;
-  late final List<_NavItem> _navItems;
-
-  late AnimationController _indicatorCtrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _indicatorCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 250),
-    );
-    _buildPagesForRole();
-  }
-
-  @override
-  void dispose() {
-    _indicatorCtrl.dispose();
-    super.dispose();
-  }
-
-  // ================== BUILD PAGES PAR RÔLE ==================
-  void _buildPagesForRole() {
+  // ========================== PAGES ==========================
+  List<Widget> _buildPages() {
     switch (widget.userRole) {
-      case 'livreur':
-        _pages = const [
-          HomeLivreur(),
-          CoursePage(),
-          HistoryLivPage(),
-          ProfilePage(),
-        ];
-        _navItems = const [
-          _NavItem(icon: Icons.home_outlined,            activeIcon: Icons.home_rounded,           label: "Accueil"),
-          _NavItem(icon: Icons.delivery_dining_outlined, activeIcon: Icons.delivery_dining,        label: "Courses"),
-          _NavItem(icon: Icons.history_outlined,         activeIcon: Icons.history,                label: "Historique"),
-          _NavItem(icon: Icons.person_outline,           activeIcon: Icons.person_rounded,         label: "Profil"),
-        ];
-        break;
+      // ================= LIVREUR =================
+      case "livreur":
+        return [
+          HomeLivreur(course: selectedCourse),
 
-      case 'restaurant':
-        _pages = [
-          HomeRestaurant(orderId: widget.orderId),
-          const CommandeRestoPage(),
-          // ✅ Plus de token en paramètre — CreateMenuPage le lit lui-même
-          const CreateMenuPage(userRole: 'restaurant'),
+          CoursePage(
+            onCourseTaken: (course) {
+              setState(() {
+                selectedCourse = course;
+                _currentIndex = 0;
+              });
+            },
+          ),
+
+          const HistoryLivPage(),
           const ProfilePage(),
         ];
-        _navItems = const [
-          _NavItem(icon: Icons.home_outlined,             activeIcon: Icons.home_rounded,          label: "Accueil"),
-          _NavItem(icon: Icons.receipt_long_outlined,     activeIcon: Icons.receipt_long,          label: "Commandes"),
-          _NavItem(icon: Icons.menu_book_outlined,        activeIcon: Icons.menu_book,             label: "Menu"),
-          _NavItem(icon: Icons.person_outline,            activeIcon: Icons.person_rounded,        label: "Profil"),
-        ];
-        break;
 
-      default:
-        _pages = [
-          HomeScreen(orderId: widget.orderId),
-          RestaurantPage(),
-          PanierPage(),
-          ProfilePage(),
+      // ================= RESTAURANT =================
+      case "restaurant":
+        return [
+          HomeRestaurant(orderId: widget.orderId),
+          const CommandeRestoPage(),
+          CreateMenuPage(userRole: widget.userRole),
+          const ProfilePage(),
         ];
-        _navItems = const [
-          _NavItem(icon: Icons.home_outlined,              activeIcon: Icons.home_rounded,          label: "Accueil"),
-          _NavItem(icon: Icons.restaurant_outlined,        activeIcon: Icons.restaurant,            label: "Restaurants"),
-          _NavItem(icon: Icons.shopping_cart_outlined,     activeIcon: Icons.shopping_cart_rounded, label: "Panier"),
-          _NavItem(icon: Icons.person_outline,             activeIcon: Icons.person_rounded,        label: "Profil"),
+
+      // ================= CLIENT =================
+      default:
+        return [
+          HomeScreen(orderId: widget.orderId),
+          const client.RestaurantPage(),
+          const orders.PanierPage(),
+          const ProfilePage(),
         ];
     }
   }
 
-  void _onTap(int index) {
-    if (index == _currentIndex) return;
-    setState(() => _currentIndex = index);
-    _indicatorCtrl.forward(from: 0);
+  // ========================== ITEMS ==========================
+  List<BottomNavigationBarItem> _buildItems() {
+    if (widget.userRole == "livreur") {
+      return const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.home_rounded),
+          label: "Accueil",
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.delivery_dining_rounded),
+          label: "Courses",
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.history_rounded),
+          label: "Historique",
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.person_rounded),
+          label: "Profil",
+        ),
+      ];
+    }
+
+    if (widget.userRole == "restaurant") {
+      return const [
+        BottomNavigationBarItem(
+          icon: Icon(Icons.home_rounded),
+          label: "Accueil",
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.receipt_long_rounded),
+          label: "Commandes",
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.restaurant_menu_rounded),
+          label: "Menu",
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.person_rounded),
+          label: "Profil",
+        ),
+      ];
+    }
+
+    return const [
+      BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: "Accueil"),
+      BottomNavigationBarItem(
+        icon: Icon(Icons.storefront_rounded),
+        label: "Restos",
+      ),
+      BottomNavigationBarItem(
+        icon: Icon(Icons.shopping_cart_rounded),
+        label: "Panier",
+      ),
+      BottomNavigationBarItem(
+        icon: Icon(Icons.person_rounded),
+        label: "Profil",
+      ),
+    ];
   }
 
-  // ================== BUILD ==================
+  // ========================== BUILD ==========================
   @override
   Widget build(BuildContext context) {
+    final pages = _buildPages();
+
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
-      bottomNavigationBar: _buildNavBar(),
-    );
-  }
-
-  // ================== NAV BAR CUSTOM ==================
-  Widget _buildNavBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: kCard,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
+      extendBody: true,
+      backgroundColor: AppColors.surface,
+      body: IndexedStack(index: _currentIndex, children: pages),
+      bottomNavigationBar: SafeArea(
+        minimum: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: AppColors.white.withValues(alpha: .96),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: AppColors.outline.withValues(alpha: .45)),
+            boxShadow: AppShadows.raised,
           ),
-        ],
-      ),
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: List.generate(
-              _navItems.length,
-              (i) => _buildNavItem(i),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.transparent,
+              selectedItemColor: AppColors.orange,
+              unselectedItemColor: AppColors.textMuted,
+              selectedLabelStyle: AppText.label(color: AppColors.orange),
+              unselectedLabelStyle: AppText.bodySm(color: AppColors.textMuted),
+              elevation: 0,
+              items: _buildItems(),
+              onTap: (index) => setState(() => _currentIndex = index),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildNavItem(int index) {
-    final item     = _navItems[index];
-    final isActive = _currentIndex == index;
-
-    final activeColor = widget.userRole == 'livreur'
-        ? kTeal
-        : widget.userRole == 'restaurant'
-            ? kOrangeDark
-            : kOrange;
-
-    return GestureDetector(
-      onTap: () => _onTap(index),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeOutCubic,
-        padding: EdgeInsets.symmetric(
-          horizontal: isActive ? 16 : 12,
-          vertical: 8,
-        ),
-        decoration: BoxDecoration(
-          color: isActive ? activeColor.withOpacity(0.12) : Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isActive ? item.activeIcon : item.icon,
-              color: isActive ? activeColor : kSubText,
-              size: 22,
-            ),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeOutCubic,
-              child: isActive
-                  ? Row(
-                      children: [
-                        const SizedBox(width: 6),
-                        Text(
-                          item.label,
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: activeColor,
-                          ),
-                        ),
-                      ],
-                    )
-                  : const SizedBox.shrink(),
-            ),
-          ],
         ),
       ),
     );

@@ -6,6 +6,7 @@ import 'commande_resto_model.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:deligood/core/network/api.dart';
 import 'package:deligood/features/restaurant/screens/restaurant_home.dart';
 
 // ─────────────────────────────────────────────
@@ -138,7 +139,7 @@ class _CommandeDetailPageState extends State<CommandeDetailPage>
     }
 
     final url =
-        'https://deligood-backend.onrender.com/api/orders/restaurant/${widget.commande.id}/status/';
+        '${Api.baseUrl}/api/orders/restaurant/${widget.commande.id}/status/';
 
     try {
       final response = await http.patch(

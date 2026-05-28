@@ -4,7 +4,7 @@ class MenuItemProduct {
   final String description;
   final double price;
   final String imageUrl;
-  
+
   // Nouvelles propriétés
   final bool? isNew;
   final int? discount;
@@ -43,23 +43,23 @@ class MenuItemProduct {
       id: json['id'] ?? 0,
       name: json['name'] ?? '',
       description: json['description'] ?? '',
-      price: (json['price'] is int) 
-          ? (json['price'] as int).toDouble() 
+      price: (json['price'] is int)
+          ? (json['price'] as int).toDouble()
           : (json['price'] ?? 0.0),
       imageUrl: json['image_url'] ?? json['imageUrl'] ?? '',
-      
+
       // Nouvelles propriétés (avec valeurs par défaut)
       isNew: json['is_new'] ?? json['isNew'],
       discount: json['discount'],
       category: json['category'],
-      rating: (json['rating'] is int) 
-          ? (json['rating'] as int).toDouble() 
+      rating: (json['rating'] is int)
+          ? (json['rating'] as int).toDouble()
           : json['rating'],
       reviewCount: json['review_count'] ?? json['reviewCount'],
       preparationTime: json['preparation_time'] ?? json['preparationTime'],
       calories: json['calories'],
-      allergens: json['allergens'] != null 
-          ? List<String>.from(json['allergens']) 
+      allergens: json['allergens'] != null
+          ? List<String>.from(json['allergens'])
           : null,
       isAvailable: json['is_available'] ?? json['isAvailable'] ?? true,
       restaurantName: json['restaurant_name'] ?? json['restaurantName'],

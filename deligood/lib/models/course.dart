@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:deligood/core/network/api.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -33,15 +34,32 @@ class CourseModel {
       totalPrice: double.tryParse(json['total_price'].toString()) ?? 0.0,
       status: json['status'] ?? "PENDING",
       createdAt: DateTime.parse(json['created_at']),
-      restaurantPos: LatLng(
-        (json['restaurant_lat'] ?? 14.692).toDouble(),
-        (json['restaurant_lng'] ?? -17.445).toDouble(),
+      restaurantPos: _positionFromJson(
+        json['restaurant_position'],
+        fallbackLat: 14.692,
+        fallbackLng: -17.445,
       ),
-      customerPos: LatLng(
-        (json['customer_lat'] ?? 14.6937).toDouble(),
-        (json['customer_lng'] ?? -17.44406).toDouble(),
+      customerPos: _positionFromJson(
+        json['client_position'],
+        fallbackLat: 14.6937,
+        fallbackLng: -17.44406,
       ),
     );
+  }
+
+  static LatLng _positionFromJson(
+    dynamic value, {
+    required double fallbackLat,
+    required double fallbackLng,
+  }) {
+    if (value is Map) {
+      final latitude = double.tryParse(value['latitude']?.toString() ?? '');
+      final longitude = double.tryParse(value['longitude']?.toString() ?? '');
+      if (latitude != null && longitude != null) {
+        return LatLng(latitude, longitude);
+      }
+    }
+    return LatLng(fallbackLat, fallbackLng);
   }
 
   Map<String, dynamic> toJson() {
@@ -105,11 +123,9 @@ class _CoursePageState extends State<CoursePage> {
     }
 
     final response = await http.get(
-      Uri.parse(
-        'http://deligood-production.up.railway.app/orders/livreur/available/',
-      ),
+      Uri.parse('${Api.baseUrl}/api/orders/livreur/available/'),
       headers: {
-        'Authorization': 'Token $token',
+        'Authorization': Api.authHeaderValue(token),
         'Content-Type': 'application/json',
       },
     );
@@ -307,14 +323,14 @@ class _CoursePageState extends State<CoursePage> {
                 if (token == null || token.isEmpty) return;
 
                 final url = Uri.parse(
-                  'http://deligood-production.up.railway.app/orders/livreur/${selectedCourse!.id}/pickup/',
+                  '${Api.baseUrl}/api/orders/livreur/${selectedCourse!.id}/pickup/',
                 );
 
                 try {
                   final response = await http.post(
                     url,
                     headers: {
-                      'Authorization': 'Token $token',
+                      'Authorization': Api.authHeaderValue(token),
                       'Content-Type': 'application/json',
                     },
                   );

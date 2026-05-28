@@ -1,31 +1,16 @@
-import 'dart:typed_data';
 import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:deligood/core/network/api.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class MenuService {
-  static const String _baseUrl =
-      'https://deligood-backend.onrender.com/api/menu';
+  static String get _baseUrl => ApiService.baseUrl;
 
-  // ─────────────────────────────────────────────
-  // HELPER : force HTTPS sur toutes les URLs
-  // ─────────────────────────────────────────────
-static String fixImageUrl(String? url) {
-  if (url == null || url.isEmpty) return '';
+  static String fixImageUrl(String? url) => Api.resolveMediaUrl(url);
 
-  if (url.startsWith('http')) return url;
-
-  if (url.contains('cloudinary')) return 'https://$url';
-
-  return url;
-}
-
-  // ─────────────────────────────────────────────
-  // CRÉER UN MENU ITEM (multipart → backend Django)
-  // L'image est envoyée au backend qui la stocke
-  // sur Cloudinary via cloudinary_storage
-  // ─────────────────────────────────────────────
   static Future<Map<String, dynamic>> createMenuItem({
     required String token,
     required String name,
@@ -35,16 +20,13 @@ static String fixImageUrl(String? url) {
     Uint8List? imageBytes,
     String imageFileName = 'menu.jpg',
   }) async {
-    debugPrint('🔑 TOKEN => $token');
-
-    final uri = Uri.parse('$_baseUrl/create/');
-
-    final request = http.MultipartRequest('POST', uri)
-      ..headers['Authorization'] = 'Token $token'
-      ..fields['name'] = name
-      ..fields['description'] = description
-      ..fields['price'] = price.toString()
-      ..fields['category'] = categoryId.toString();
+    final request =
+        http.MultipartRequest('POST', Uri.parse('$_baseUrl/api/menu/create/'))
+          ..headers['Authorization'] = Api.authHeaderValue(token)
+          ..fields['name'] = name
+          ..fields['description'] = description
+          ..fields['price'] = price.toString()
+          ..fields['category'] = categoryId.toString();
 
     if (imageBytes != null && imageBytes.isNotEmpty) {
       request.files.add(
@@ -57,38 +39,31 @@ static String fixImageUrl(String? url) {
     }
 
     try {
-      final streamedResponse =
-          await request.send().timeout(const Duration(seconds: 30));
-      final res = await http.Response.fromStream(streamedResponse);
+      final streamed = await request.send().timeout(
+        const Duration(seconds: 30),
+      );
+      final response = await http.Response.fromStream(streamed);
+      final data = _decodeMap(response.body);
 
-      debugPrint('📦 CREATE STATUS => ${res.statusCode}');
-      debugPrint('📦 CREATE BODY   => ${res.body}');
-
-      final data = jsonDecode(res.body);
-
-      if (res.statusCode == 201) {
-        // ✅ Normalise l'URL image retournée par Django/Cloudinary
-        if (data['image'] != null) {
-          data['image'] = fixImageUrl(data['image'].toString());
-        }
+      if (response.statusCode == 201) {
+        data['image'] = fixImageUrl(
+          (data['image_url'] ?? data['image'])?.toString(),
+        );
         return {'success': true, 'data': data};
-      } else {
-        return {
-          'success': false,
-          'message': data.toString(),
-          'errors': data,
-          'status': res.statusCode,
-        };
       }
-    } catch (e) {
-      debugPrint('❌ createMenuItem error => $e');
-      return {'success': false, 'message': e.toString()};
+
+      return {
+        'success': false,
+        'message': _errorMessage(data, response.statusCode),
+        'errors': data,
+        'status': response.statusCode,
+      };
+    } catch (error) {
+      debugPrint('createMenuItem error: $error');
+      return {'success': false, 'message': error.toString()};
     }
   }
 
-  // ─────────────────────────────────────────────
-  // MODIFIER UN MENU ITEM
-  // ─────────────────────────────────────────────
   static Future<Map<String, dynamic>> updateMenuItem({
     required String token,
     required int itemId,
@@ -100,10 +75,10 @@ static String fixImageUrl(String? url) {
     Uint8List? imageBytes,
     String imageFileName = 'menu.jpg',
   }) async {
-    final uri = Uri.parse('$_baseUrl/items/$itemId/update/');
-
-    final request = http.MultipartRequest('PATCH', uri)
-      ..headers['Authorization'] = 'Token $token';
+    final request = http.MultipartRequest(
+      'PATCH',
+      Uri.parse('$_baseUrl/api/menu/update/$itemId/'),
+    )..headers['Authorization'] = Api.authHeaderValue(token);
 
     if (name != null) request.fields['name'] = name;
     if (description != null) request.fields['description'] = description;
@@ -124,93 +99,102 @@ static String fixImageUrl(String? url) {
     }
 
     try {
-      final streamedResponse =
-          await request.send().timeout(const Duration(seconds: 30));
-      final res = await http.Response.fromStream(streamedResponse);
+      final streamed = await request.send().timeout(
+        const Duration(seconds: 30),
+      );
+      final response = await http.Response.fromStream(streamed);
+      final data = _decodeMap(response.body);
 
-      debugPrint('📦 UPDATE STATUS => ${res.statusCode}');
-
-      final data = jsonDecode(res.body);
-
-      if (res.statusCode == 200) {
-        if (data['image'] != null) {
-          data['image'] = fixImageUrl(data['image'].toString());
-        }
+      if (response.statusCode == 200) {
+        data['image'] = fixImageUrl(
+          (data['image_url'] ?? data['image'])?.toString(),
+        );
         return {'success': true, 'data': data};
-      } else {
-        return {'success': false, 'message': data.toString(), 'errors': data};
       }
-    } catch (e) {
-      debugPrint('❌ updateMenuItem error => $e');
-      return {'success': false, 'message': e.toString()};
+
+      return {
+        'success': false,
+        'message': _errorMessage(data, response.statusCode),
+        'errors': data,
+        'status': response.statusCode,
+      };
+    } catch (error) {
+      debugPrint('updateMenuItem error: $error');
+      return {'success': false, 'message': error.toString()};
     }
   }
 
-  // ─────────────────────────────────────────────
-  // SUPPRIMER UN MENU ITEM
-  // ─────────────────────────────────────────────
   static Future<bool> deleteMenuItem({
     required String token,
     required int itemId,
   }) async {
     try {
-      final res = await http.delete(
-        Uri.parse('$_baseUrl/items/$itemId/delete/'),
-        headers: {'Authorization': 'Token $token'},
-      ).timeout(const Duration(seconds: 15));
+      final response = await http
+          .delete(
+            Uri.parse('$_baseUrl/api/menu/delete/$itemId/'),
+            headers: {'Authorization': Api.authHeaderValue(token)},
+          )
+          .timeout(const Duration(seconds: 15));
 
-      debugPrint('🗑 DELETE STATUS => ${res.statusCode}');
-      return res.statusCode == 204 || res.statusCode == 200;
-    } catch (e) {
-      debugPrint('❌ deleteMenuItem error => $e');
+      return response.statusCode == 204 || response.statusCode == 200;
+    } catch (error) {
+      debugPrint('deleteMenuItem error: $error');
       return false;
     }
   }
 
-  // ─────────────────────────────────────────────
-  // RÉCUPÉRER LES ITEMS D'UN RESTAURANT
-  // ─────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> getMenuItems(
-    
-      int restaurantId) async {
+    int restaurantId,
+  ) async {
     try {
-      final res = await http
-          .get(Uri.parse('$_baseUrl/items/?restaurant_id=$restaurantId'))
+      final response = await http
+          .get(
+            Uri.parse('$_baseUrl/api/menu/items/?restaurant_id=$restaurantId'),
+          )
           .timeout(const Duration(seconds: 15));
 
-      debugPrint('🍽 MENU STATUS => ${res.statusCode}');
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        final rawList = data is List ? data : (data['results'] ?? []);
-
-        return (rawList as List).map<Map<String, dynamic>>((e) {
-          return {
-            'id': e['id'] ?? 0,
-            'name': e['name'] ?? 'Produit',
-            'description': e['description'] ?? '',
-            'price': _parsePrice(e['price']),
-            // ✅ Force HTTPS pour toutes les images Cloudinary
-            'image': fixImageUrl(e['image']?.toString()) == ''
-    ? 'https://via.placeholder.com/300'
-    : fixImageUrl(e['image']?.toString()),
-            'category': e['category'],
-            'is_available': e['is_available'] ?? true,
-          };
-        }).toList();
+      if (response.statusCode != 200 ||
+          response.body.trimLeft().startsWith('<')) {
+        debugPrint('getMenuItems failed: ${response.statusCode}');
+        return [];
       }
-    } catch (e) {
-      debugPrint('❌ getMenuItems error => $e');
-    }
-    
-    return [];
 
-    
+      final decoded = jsonDecode(response.body);
+      final rawList = switch (decoded) {
+        List() => decoded,
+        Map() when decoded.containsKey('results') => decoded['results'],
+        Map() when decoded.containsKey('items') => decoded['items'],
+        Map() when decoded.containsKey('data') => decoded['data'],
+        _ => <dynamic>[],
+      };
+
+      return (rawList as List)
+          .whereType<Map>()
+          .map<Map<String, dynamic>>((raw) {
+            final item = Map<String, dynamic>.from(raw);
+            return {
+              'id': int.tryParse(item['id']?.toString() ?? '') ?? 0,
+              'name': item['name']?.toString() ?? 'Produit',
+              'description': item['description']?.toString() ?? '',
+              'price': _parsePrice(item['price']),
+              'image': fixImageUrl(
+                (item['image_url'] ?? item['image'])?.toString(),
+              ),
+              'category': item['category'],
+              'category_id': item['category_id'] ?? item['category'],
+              'is_available': item['is_available'] ?? item['available'] ?? true,
+              'restaurant_id':
+                  item['restaurant_id'] ?? item['restaurant'] ?? restaurantId,
+            };
+          })
+          .where((item) => item['id'] != 0)
+          .toList();
+    } catch (error, stackTrace) {
+      debugPrint('getMenuItems error: $error\n$stackTrace');
+      return [];
+    }
   }
 
-  // ─────────────────────────────────────────────
-  // CATÉGORIES avec cache SharedPreferences
-  // ─────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> getCategories({
     bool forceRefresh = false,
   }) async {
@@ -218,62 +202,71 @@ static String fixImageUrl(String? url) {
     const cacheKey = 'categories_cache';
     const cacheTimeKey = 'categories_cache_time';
 
-    // ✅ Cache valide 1h seulement (évite les données périmées)
     if (!forceRefresh) {
       final cached = prefs.getString(cacheKey);
       final cachedTime = prefs.getInt(cacheTimeKey) ?? 0;
       final now = DateTime.now().millisecondsSinceEpoch;
-      final isRecent = (now - cachedTime) < const Duration(hours: 1).inMilliseconds;
+      final isRecent =
+          (now - cachedTime) < const Duration(hours: 1).inMilliseconds;
 
       if (cached != null && isRecent) {
         try {
-          final List data = jsonDecode(cached);
-          if (data.isNotEmpty) {
-            debugPrint('⚡ CATEGORIES FROM CACHE => ${data.length}');
-            return data.cast<Map<String, dynamic>>();
-          }
+          return (jsonDecode(cached) as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
         } catch (_) {}
       }
     }
 
-    // API call
     try {
       final response = await http
-          .get(Uri.parse('$_baseUrl/categories/'))
+          .get(Uri.parse('$_baseUrl/api/menu/categories/'))
           .timeout(const Duration(seconds: 15));
 
-      debugPrint('🏷️ CATEGORIES STATUS => ${response.statusCode}');
-
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
+      if (response.statusCode == 200 &&
+          !response.body.trimLeft().startsWith('<')) {
+        final data = (jsonDecode(response.body) as List)
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
 
         if (data.isNotEmpty) {
           await prefs.setString(cacheKey, jsonEncode(data));
           await prefs.setInt(
-              cacheTimeKey, DateTime.now().millisecondsSinceEpoch);
+            cacheTimeKey,
+            DateTime.now().millisecondsSinceEpoch,
+          );
         }
 
-        return data.cast<Map<String, dynamic>>();
+        return data;
       }
-    } catch (e) {
-      debugPrint('❌ getCategories error => $e');
+    } catch (error) {
+      debugPrint('getCategories error: $error');
     }
 
     return [];
   }
 
-  // ─────────────────────────────────────────────
-  // VIDER LE CACHE CATÉGORIES
-  // ─────────────────────────────────────────────
   static Future<void> clearCategoriesCache() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('categories_cache');
     await prefs.remove('categories_cache_time');
   }
 
-  // ─────────────────────────────────────────────
-  // HELPER PRIVÉ : parser un prix en double
-  // ─────────────────────────────────────────────
+  static Map<String, dynamic> _decodeMap(String body) {
+    if (body.isEmpty || body.trimLeft().startsWith('<')) return {};
+    final decoded = jsonDecode(body);
+    return decoded is Map<String, dynamic>
+        ? decoded
+        : Map<String, dynamic>.from(decoded as Map);
+  }
+
+  static String _errorMessage(Map<String, dynamic> data, int statusCode) {
+    return (data['detail'] ?? data['message'] ?? data['error'] ?? data)
+        .toString();
+  }
+
   static double _parsePrice(dynamic value) {
     if (value == null) return 0;
     if (value is int) return value.toDouble();

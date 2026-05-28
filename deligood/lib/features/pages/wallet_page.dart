@@ -1,13 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:sizer/sizer.dart';
 import 'package:intl/intl.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:deligood/core/network/api.dart';
-
-const kOrange = Color(0xFFFF6B35);
-const kTeal = Color(0xFF00CCBC);
-const kBg = Color(0xFFF7F3EF);
-const kWhite = Colors.white;
-const kText = Color(0xFF1A1A1A);
 
 class WalletPage extends StatefulWidget {
   const WalletPage({super.key});
@@ -17,9 +12,10 @@ class WalletPage extends StatefulWidget {
 }
 
 class _WalletPageState extends State<WalletPage> {
-  double balance = 0;
+  double balance = 0.0;
   List transactions = [];
-  bool loading = true;
+  bool isLoading = true;
+  String? errorMessage;
 
   @override
   void initState() {
@@ -27,151 +23,276 @@ class _WalletPageState extends State<WalletPage> {
     fetchWallet();
   }
 
+  // ================= FETCH WALLET =================
   Future<void> fetchWallet() async {
-    setState(() => loading = true);
-    final data = await ApiService.get('/api/wallet/');
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
 
-    if (data != null) {
-      setState(() {
-        balance = double.tryParse(data['balance'].toString()) ?? 0;
-        transactions = data['transactions'] ?? [];
-      });
+    try {
+      final data = await Api.get(
+        '/api/finance/wallet/',
+      ); // token ajouté automatiquement par Api.get()
+      if (data != null) {
+        setState(() {
+          balance = double.tryParse(data['balance'].toString()) ?? 0.0;
+          transactions = data['transactions'] ?? [];
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => errorMessage = e.toString());
+        _showError('Erreur lors du chargement: $e');
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
+  }
 
-    setState(() => loading = false);
+  // ================= ERROR SNACKBAR =================
+  void _showError(String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  // ================= FORMAT DATE =================
+  String formatDate(String date) {
+    try {
+      return DateFormat('dd/MM/yyyy HH:mm').format(DateTime.parse(date));
+    } catch (_) {
+      return date;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBg,
-      body: loading
-          ? const Center(child: CircularProgressIndicator(color: kOrange))
-          : CustomScrollView(
-              physics: const BouncingScrollPhysics(),
-              slivers: [
-                _appBar(),
-                SliverToBoxAdapter(
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 20),
-                      _BalanceCard(balance: balance),
-                      const SizedBox(height: 25),
-                      _TransactionHeader(),
-                      _TransactionList(transactions: transactions),
-                      const SizedBox(height: 30),
-                    ],
-                  ),
-                )
-              ],
-            ),
-    );
-  }
-
-  Widget _appBar() {
-    return SliverAppBar(
-      backgroundColor: kBg,
-      elevation: 0,
-      pinned: true,
-      title: Text(
-        "Mon portefeuille",
-        style: GoogleFonts.playfairDisplay(
-          fontWeight: FontWeight.bold,
-          color: kText,
+      backgroundColor: Colors.grey.shade50,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.deepPurpleAccent,
+        title: Text(
+          'Mon Wallet',
+          style: TextStyle(
+            fontSize: 20.sp,
+            fontWeight: FontWeight.bold,
+            fontFamily: 'poppins',
+          ),
         ),
+        centerTitle: true,
+        actions: [
+          Padding(
+            padding: EdgeInsets.only(right: 5.w),
+            child: CircleAvatar(
+              radius: 5.w,
+              backgroundImage: AssetImage('assets/images/n.png'),
+            ),
+          ),
+        ],
       ),
-      centerTitle: true,
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios_new_rounded, color: kText),
-        onPressed: () => Navigator.pop(context),
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.refresh_rounded, color: kText),
-          onPressed: fetchWallet,
-        )
-      ],
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : errorMessage != null
+          ? Center(
+              child: Padding(
+                padding: EdgeInsets.all(6.w),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.account_balance_wallet_outlined,
+                      size: 56,
+                      color: Colors.grey,
+                    ),
+                    SizedBox(height: 2.h),
+                    Text(
+                      'Impossible de charger le wallet',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15.sp,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    SizedBox(height: 1.h),
+                    Text(errorMessage!, textAlign: TextAlign.center),
+                    SizedBox(height: 2.h),
+                    ElevatedButton.icon(
+                      onPressed: fetchWallet,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Reessayer'),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : RefreshIndicator(
+              onRefresh: fetchWallet,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ================= CARD SOLDE =================
+                    CardWallet(
+                      balance: balance,
+                      onWithdraw: () {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Retrait lancé')),
+                        );
+                      },
+                    ),
+                    SizedBox(height: 4.h),
+
+                    // ================= ACTIONS / CONTACTS =================
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          SizedBox(width: 1.w),
+                          ActionCircle(
+                            icon: Icons.send,
+                            label: 'Envoyer',
+                            selected: true,
+                          ),
+                          ActionCircle(
+                            icon: Icons.request_page,
+                            label: 'Demander',
+                          ),
+                          ContactCircle(label: 'Jennie'),
+                          ContactCircle(label: 'Sawn'),
+                          ContactCircle(label: 'Mittali'),
+                          SizedBox(width: 1.w),
+                        ],
+                      ),
+                    ),
+                    SizedBox(height: 4.h),
+
+                    Text(
+                      'Transactions récentes',
+                      style: TextStyle(
+                        fontSize: 14.sp,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: 'poppins',
+                      ),
+                    ),
+                    SizedBox(height: 2.h),
+
+                    // ================= LISTE TRANSACTIONS =================
+                    transactions.isEmpty
+                        ? Center(
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(vertical: 5.h),
+                              child: Text(
+                                'Aucune transaction pour le moment',
+                                style: TextStyle(
+                                  fontSize: 15.sp,
+                                  fontFamily: 'poppins',
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ),
+                          )
+                        : ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: transactions.length,
+                            separatorBuilder: (_, __) => SizedBox(height: 2.h),
+                            itemBuilder: (context, index) {
+                              final tx = transactions[index];
+                              return TransactionTile(
+                                amount: tx['amount'],
+                                type: tx['transaction_type'],
+                                source: tx['source'] ?? '—',
+                                date: formatDate(tx['created_at']),
+                              );
+                            },
+                          ),
+                  ],
+                ),
+              ),
+            ),
     );
   }
 }
 
-class _BalanceCard extends StatelessWidget {
+// ================= CARD WALLET =================
+class CardWallet extends StatelessWidget {
   final double balance;
+  final VoidCallback onWithdraw;
 
-  const _BalanceCard({required this.balance});
+  const CardWallet({
+    super.key,
+    required this.balance,
+    required this.onWithdraw,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(22),
+      height: 22.h,
+      padding: EdgeInsets.all(4.w),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: const LinearGradient(
-          colors: [kOrange, kTeal],
+        borderRadius: BorderRadius.circular(3.w),
+        gradient: LinearGradient(
+          colors: [Colors.deepPurple, Colors.purpleAccent],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
         boxShadow: [
           BoxShadow(
-            color: kTeal.withOpacity(0.25),
-            blurRadius: 25,
-            offset: const Offset(0, 10),
-          )
+            color: Colors.purple.withOpacity(0.3),
+            blurRadius: 12,
+            offset: Offset(0, 6),
+          ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            "Solde disponible",
-            style: GoogleFonts.poppins(
-              color: Colors.white70,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            "${balance.toStringAsFixed(0)} FCFA",
-            style: GoogleFonts.playfairDisplay(
-              fontSize: 34,
-              fontWeight: FontWeight.bold,
+            'ANGE ERIK KYLE',
+            style: TextStyle(
               color: Colors.white,
+              fontWeight: FontWeight.w700,
+              fontSize: 18.sp,
+              fontFamily: 'poppins',
             ),
           ),
-          const SizedBox(height: 18),
+          Spacer(),
+          Text(
+            '\$${balance.toStringAsFixed(2)}',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 28.sp,
+              fontFamily: 'poppins',
+            ),
+          ),
+          SizedBox(height: 1.h),
           SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
+            width: 35.w,
+            height: 5.h,
+            child: ElevatedButton(
+              onPressed: onWithdraw,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: kTeal,
+                backgroundColor: Colors.orangeAccent,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(50),
+                ),
+                shadowColor: Colors.black26,
+                elevation: 5,
+              ),
+              child: Text(
+                'Retrait',
+                style: TextStyle(
+                  fontFamily: 'poppins',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12.sp,
                 ),
               ),
-              onPressed: () {},
-              icon: const Icon(Icons.money),
-              label: const Text("Retirer"),
-            ),
-          )
-        ],
-      ),
-    );
-  }
-}
-
-class _TransactionHeader extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          Text(
-            "Transactions",
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: kText,
             ),
           ),
         ],
@@ -180,127 +301,158 @@ class _TransactionHeader extends StatelessWidget {
   }
 }
 
-class _TransactionList extends StatelessWidget {
-  final List transactions;
+// ================= ACTION CIRCLE =================
+class ActionCircle extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
 
-  const _TransactionList({required this.transactions});
-
-  @override
-  Widget build(BuildContext context) {
-    if (transactions.isEmpty) {
-      return const _EmptyState();
-    }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(20),
-      itemCount: transactions.length,
-      itemBuilder: (_, i) {
-        final tx = transactions[i];
-        return _TransactionItem(tx: tx);
-      },
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const ActionCircle({
+    super.key,
+    required this.icon,
+    required this.label,
+    this.selected = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.all(40),
+      padding: EdgeInsets.symmetric(horizontal: 2.w),
       child: Column(
-        children: const [
-          Icon(Icons.receipt_long, size: 60, color: Colors.grey),
-          SizedBox(height: 10),
-          Text("Aucune transaction"),
-        ],
-      ),
-    );
-  }
-}
-
-class _TransactionItem extends StatelessWidget {
-  final Map tx;
-
-  const _TransactionItem({required this.tx});
-
-  @override
-  Widget build(BuildContext context) {
-    final type = tx['transaction_type'] ?? 'debit';
-    final isCredit = type == 'credit';
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: kWhite,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-          )
-        ],
-      ),
-      child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(4.w),
             decoration: BoxDecoration(
-              color: (isCredit ? kTeal : Colors.red)
-                  .withOpacity(0.1),
               shape: BoxShape.circle,
+              gradient: selected
+                  ? LinearGradient(
+                      colors: [Colors.deepPurple, Colors.purpleAccent],
+                    )
+                  : null,
+              color: selected ? null : Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black12,
+                  blurRadius: 6,
+                  offset: Offset(0, 3),
+                ),
+              ],
             ),
-            child: Icon(
-              isCredit
-                  ? Icons.arrow_downward_rounded
-                  : Icons.arrow_upward_rounded,
-              color: isCredit ? kTeal : Colors.red,
+            child: Icon(icon, color: selected ? Colors.white : Colors.grey),
+          ),
+          SizedBox(height: 1.h),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ================= CONTACT CIRCLE =================
+class ContactCircle extends StatelessWidget {
+  final String label;
+
+  const ContactCircle({super.key, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 2.w),
+      child: Column(
+        children: [
+          CircleAvatar(
+            radius: 5.w,
+            backgroundColor: Colors.purple.shade50,
+            child: Text(
+              label[0],
+              style: TextStyle(
+                color: Colors.deepPurple,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
-          const SizedBox(width: 12),
+          SizedBox(height: 1.h),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12.sp, fontFamily: 'poppins'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ================= TRANSACTION TILE =================
+class TransactionTile extends StatelessWidget {
+  final String type;
+  final dynamic amount;
+  final String source;
+  final String date;
+
+  const TransactionTile({
+    super.key,
+    required this.type,
+    required this.amount,
+    required this.source,
+    required this.date,
+  });
+
+  Color _getColor() =>
+      type == 'credit' ? Colors.green.shade400 : Colors.red.shade400;
+  IconData _getIcon() =>
+      type == 'credit' ? Icons.arrow_downward : Icons.arrow_upward;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: 4.w, vertical: 2.h),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(3.w),
+        boxShadow: [
+          BoxShadow(color: Colors.black12, blurRadius: 8, offset: Offset(0, 4)),
+        ],
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 5.w,
+            backgroundColor: _getColor().withOpacity(0.15),
+            child: Icon(_getIcon(), color: _getColor(), size: 6.w),
+          ),
+          SizedBox(width: 4.w),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  tx['source'] ?? "Transaction",
-                  style: GoogleFonts.poppins(
+                  '$amount F CFA',
+                  style: TextStyle(
+                    fontSize: 12.sp,
                     fontWeight: FontWeight.w600,
+                    fontFamily: 'poppins',
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: 0.5.h),
                 Text(
-                  _format(tx['created_at']),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey,
+                  source,
+                  style: TextStyle(
+                    fontSize: 10.sp,
+                    color: Colors.grey.shade600,
                   ),
                 ),
               ],
             ),
           ),
           Text(
-            "${isCredit ? '+' : '-'}${tx['amount']} F",
-            style: GoogleFonts.poppins(
-              fontWeight: FontWeight.bold,
-              color: isCredit ? kTeal : Colors.red,
-            ),
-          )
+            date,
+            style: TextStyle(fontSize: 10.sp, color: Colors.grey.shade500),
+          ),
         ],
       ),
     );
-  }
-
-  String _format(String date) {
-    try {
-      final dt = DateTime.parse(date);
-      return DateFormat("dd MMM yyyy - HH:mm").format(dt);
-    } catch (_) {
-      return date;
-    }
   }
 }
